@@ -1,0 +1,65 @@
+"""In-memory index of all prompt files, keyed to the tip commit of main.
+
+The index is rebuilt only when main's head SHA changes, so browsing and
+search stay fast without this backend ever becoming a second source of truth.
+Access control is preserved: every request first asks Gitea for the branch
+head using the REQUESTING USER's token, so a user without read access on the
+repo gets Gitea's 403/404 before any cached data is touched.
+"""
+
+import asyncio
+
+from fastapi import HTTPException
+
+from . import gitea
+from .config import settings
+from .frontmatter import parse_prompt
+from .paths import is_prompt_file, is_valid_prompt_path  # noqa: F401 (re-exported)
+
+_cache: dict = {"sha": None, "prompts": []}
+_lock = asyncio.Lock()
+
+
+async def head_sha(token: str) -> str:
+    branch = await gitea.api(token, "GET", f"{settings.repo_api}/branches/main")
+    return branch["commit"]["id"]
+
+
+async def get_index(token: str) -> list[dict]:
+    sha = await head_sha(token)
+    if _cache["sha"] == sha:
+        return _cache["prompts"]
+    async with _lock:
+        if _cache["sha"] == sha:  # another request rebuilt it while we waited
+            return _cache["prompts"]
+        tree = await gitea.api(
+            token, "GET", f"{settings.repo_api}/git/trees/{sha}",
+            params={"recursive": "true"},
+        )
+        paths = [
+            entry["path"]
+            for entry in tree.get("tree", [])
+            if entry.get("type") == "blob" and is_prompt_file(entry["path"])
+        ]
+
+        semaphore = asyncio.Semaphore(8)
+
+        async def fetch(path: str) -> dict | None:
+            async with semaphore:
+                try:
+                    raw = await gitea.api(
+                        token, "GET", f"{settings.repo_api}/raw/{path}",
+                        params={"ref": sha}, raw=True,
+                    )
+                except HTTPException:
+                    return None
+                return parse_prompt(path, raw)
+
+        prompts = [p for p in await asyncio.gather(*(fetch(p) for p in paths)) if p]
+        prompts.sort(key=lambda p: (p["category"], p["title"].lower()))
+        _cache.update(sha=sha, prompts=prompts)
+        return prompts
+
+
+def invalidate() -> None:
+    _cache.update(sha=None, prompts=[])

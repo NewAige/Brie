@@ -1,0 +1,48 @@
+import React, { useRef, useState } from 'react'
+import { api } from '../api.js'
+
+// THE feature (spec §4): copies the prompt body only — the backend already
+// stripped the YAML front-matter, so `text` is exactly what gets copied.
+export default function CopyButton({ text, path, large }) {
+  const [state, setState] = useState('idle') // idle | copied | failed
+  const timer = useRef(null)
+
+  const flash = (next) => {
+    setState(next)
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => setState('idle'), 2000)
+  }
+
+  const copy = async () => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        // Fallback for non-HTTPS dev setups.
+        const ta = document.createElement('textarea')
+        ta.value = text
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        const ok = document.execCommand('copy')
+        document.body.removeChild(ta)
+        if (!ok) throw new Error('execCommand failed')
+      }
+      flash('copied')
+      api.logCopy(path)
+    } catch {
+      flash('failed')
+    }
+  }
+
+  return (
+    <button
+      className={`btn btn-primary ${large ? 'btn-large' : ''} ${state === 'copied' ? 'btn-success' : ''}`}
+      onClick={copy}
+      title="Copy the prompt text to your clipboard"
+    >
+      {state === 'copied' ? '✓ Copied' : state === 'failed' ? 'Copy failed — select manually' : 'Copy prompt'}
+    </button>
+  )
+}

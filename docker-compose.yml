@@ -1,0 +1,63 @@
+services:
+  gitea:
+    # Pin at least the minor version; in production pin an exact version or image digest.
+    # Requires >= 1.23 for granular OAuth scopes (spec §6).
+    image: gitea/gitea:1.24
+    container_name: brie-gitea
+    restart: unless-stopped
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      # SQLite backend — deliberately not Postgres (spec §3, §9).
+      - GITEA__database__DB_TYPE=sqlite3
+      - GITEA__server__ROOT_URL=${GITEA_PUBLIC_URL:-http://localhost:3000}/
+      - GITEA__server__HTTP_PORT=3000
+      # Local-only hardening (spec §8):
+      # OFFLINE_MODE serves all assets locally and disables Gravatar/federated avatars.
+      - GITEA__server__OFFLINE_MODE=true
+      # No repo mirroring to/from external hosts — explicitly disabled.
+      - GITEA__mirror__ENABLED=false
+      # No importing ("migrating") repos from external hosts.
+      - GITEA__migrations__ALLOWED_DOMAINS=
+      # Webhooks may only target loopback (i.e. nothing useful) — effectively disabled.
+      - GITEA__webhook__ALLOWED_HOST_LIST=127.0.0.1
+      # The update checker phones home to gitea.io — disable it.
+      - GITEA__cron_0x2E_update_checker__ENABLED=false
+      # Accounts come from AD/LDAP (prod) or the seed script (dev) — no self-registration.
+      - GITEA__service__DISABLE_REGISTRATION=true
+      - GITEA__openid__ENABLE_OPENID_SIGNIN=false
+      - GITEA__openid__ENABLE_OPENID_SIGNUP=false
+      # Skip the interactive install wizard.
+      - GITEA__security__INSTALL_LOCK=true
+    volumes:
+      - ./data/gitea:/data
+    ports:
+      # The browser must reach Gitea directly for the OAuth authorize/login pages.
+      - "3000:3000"
+    networks: [brie]
+
+  backend:
+    build: ./backend
+    container_name: brie-backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DB_PATH=/data/app.db
+    volumes:
+      - ./data/app:/data
+    depends_on: [gitea]
+    # Not exposed to the host — reachable only via the frontend's nginx proxy.
+    networks: [brie]
+
+  frontend:
+    build: ./frontend
+    container_name: brie-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on: [backend]
+    networks: [brie]
+
+networks:
+  brie:
+    driver: bridge

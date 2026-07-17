@@ -1,0 +1,15 @@
+# Secrets — never commit
+.env
+
+# Runtime data (Gitea state, app SQLite DB)
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/dist/
