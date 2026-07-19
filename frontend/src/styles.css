@@ -183,4 +183,10 @@ a:hover { text-decoration: underline; }
 .ranked li { counter-increment: rank; position: relative; padding-left: 1.6rem; }
 .ranked li::before { content: counter(rank); position: absolute; left: 0; top: 0.1rem; font-weight: 700; color: var(--muted); font-size: 0.85rem; }
 
+/* Admin users */
+.admin-users { gap: 0; }
+.admin-user-row { flex-direction: row; align-items: center; gap: 0.7rem; padding: 0.55rem 0; border-bottom: 1px solid var(--border); }
+.admin-users .admin-user-row:last-child { border-bottom: none; }
+.admin-user-name { flex: 1; font-weight: 550; }
+
 .tabs { display: flex; gap: 0.4rem; }

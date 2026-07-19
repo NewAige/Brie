@@ -3,6 +3,7 @@ import { NavLink, Route, Routes } from 'react-router-dom'
 import { api } from './api.js'
 import { UserContext } from './hooks.js'
 import Activity from './pages/Activity.jsx'
+import AdminUsers from './pages/AdminUsers.jsx'
 import Browse from './pages/Browse.jsx'
 import Drafts from './pages/Drafts.jsx'
 import History from './pages/History.jsx'
@@ -51,6 +52,7 @@ export default function App() {
               {user.role !== 'browser' && <NavLink to="/drafts">My drafts</NavLink>}
               <NavLink to="/suggestions">Suggestions</NavLink>
               <NavLink to="/activity">Activity</NavLink>
+              {user.role === 'admin' && <NavLink to="/admin">Users</NavLink>}
             </nav>
             <div className="userbox">
               <span className="user-name">{user.full_name}</span>
@@ -68,6 +70,7 @@ export default function App() {
             <Route path="/history/*" element={<History />} />
             <Route path="/suggestions" element={<Suggestions />} />
             <Route path="/activity" element={<Activity />} />
+            <Route path="/admin" element={<AdminUsers />} />
             <Route path="*" element={<div className="empty">Page not found.</div>} />
           </Routes>
         </main>

@@ -77,6 +77,12 @@ export const api = {
   // and re-checks ownership itself. `pr.owner_mergeable` only picks the label.
   merge: (id) => request(`/api/pulls/${id}/merge`, { method: 'POST' }),
   activity: () => request('/api/activity'),
+  adminUsers: () => request('/api/admin/users'),
+  setContributor: (username, member) =>
+    request(`/api/admin/users/${encodeURIComponent(username)}/contributor`, {
+      method: 'PUT',
+      body: JSON.stringify({ member }),
+    }),
 }
 
 // Encode each path segment but keep the slashes.

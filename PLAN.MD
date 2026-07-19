@@ -59,7 +59,7 @@ And four roles: **Browser** (read-only, cannot even suggest), **Contributor** (p
 - **Verify in dev:** fork of private repo is created private; fork-name 409 collision surfaces a clear error; `sync_fork` never touches `drafts`; approvers (write users) can fork.
 - Tests: path validation reuse; publish rendering includes chosen level; 409 on existing path / pending PR; browser 403 on all drafts endpoints.
 
-### Phase E — Minimal Admin page
+### Phase E — Minimal Admin page ✅ DONE (2026-07-19, see Handoff notes)
 - New `backend/app/routers/admin.py` (`/api/admin`, `require_admin` via the admin's own token — never the bot): `GET /users` (org members + contributors-team membership + collaborator perms); `PUT /users/{username}/contributor {member}` (team member add/remove).
 - Frontend: `AdminUsers.jsx` + `/admin` route for role `admin`.
 - Docs: note that team mutation needs Gitea **org owner** (surface 403 verbatim), and LDAP team-sync overwrites manual assignment in prod (page becomes advisory there).
@@ -150,6 +150,25 @@ And four roles: **Browser** (read-only, cannot even suggest), **Contributor** (p
 1. **Not committed** — working tree holds Phases A+B+C+D.
 2. **Dev-stack verify pending** (needs the stack up): fork of the private repo is created private; fork-name 409 shows the friendly message; `sync_fork` leaves `drafts` alone; approvers can fork; **and the `compare/main...drafts` response includes per-commit `files` on the deployed Gitea version** — the draft listing depends on it (built against Gitea 1.24; if absent, listing shows empty, nothing is lost).
 3. **Phase E is next** (minimal Admin page). Nothing in Phase D blocks it.
+
+### Phase E — implemented 2026-07-19 (this working tree, uncommitted)
+
+**What landed** (all bullets from the Phase E plan):
+
+- `backend/app/deps.py` — `require_admin` dependency beside `require_contributor` (live role via `roles.get_role`, 403 unless `admin`).
+- `backend/app/routers/admin.py` — new, prefix `/api/admin`, every call with the **admin's own token** (never the bot). `GET /users`: union of repo collaborators (`GET {repo}/collaborators`, paginated) and `contributors`-team members (team found via `GET /orgs/{org}/teams`, matched case-insensitively like `roles.derive_role`), each user's role from `GET {repo}/collaborators/{username}/permission` (`admin`→admin, `write`→approver, else contributor iff in team, else browser; unreadable ⇒ browser fail-closed); the bot account (`settings.bot_username`) is hidden from the list; response `{users: [{username, full_name, role, contributor}], team_found}`. `PUT /users/{username}/contributor {member: bool}` → `PUT`/`DELETE /teams/{id}/members/{username}`; 404 with a clear message when the team doesn't exist; Gitea errors (notably the org-owner 403) pass through **verbatim** since `GiteaError` is an `HTTPException` carrying Gitea's status + message.
+- `backend/app/main.py` — admin router included.
+- Frontend — new `frontend/src/pages/AdminUsers.jsx` (`/admin` route, "Users" nav link shown only to admins; row per user with role chip + "Make contributor"/"Remove from contributors" toggle for browser/contributor rows, "managed in Gitea" for approver/admin rows; missing-team banner from `team_found`; Gitea's error text shown as-is); `api.js` gains `adminUsers` / `setContributor`; small `.admin-user-row` styles in `styles.css`.
+- Docs — `docs/deployment.md` §3: admin page needs Gitea **org owner** to mutate the team (403 shown verbatim otherwise), and LDAP group sync **overwrites** manual assignment — page is an advisory roster in that configuration.
+- Tests — new `backend/tests/test_admin.py` with a `FakeGitea` recording calls: non-admin 403 on both endpoints (browser/contributor/approver), users-list shape (roles + team flag + sorted), team-only LDAP member appears without a direct grant, bot hidden, unreadable permission ⇒ browser, missing team ⇒ `team_found: false` (list still renders) and 404 on toggle, add/remove hit `PUT`/`DELETE /teams/{id}/members/{username}` with the admin's token, Gitea's org-owner 403 message passes through byte-identical. **`python -m pytest tests -q` → 102 passed**; `npm run build` clean.
+
+**Deviations from the plan wording:** none material. The plan said "org members"; the implementation unions **collaborators** + team members instead — in this stack users get access as direct collaborators (`scripts/seed.py`) or via the LDAP-synced team, and plain org membership grants no repo access, so the union is the truthful roster.
+
+**Not yet done / for the next session:**
+
+1. **Not committed** — working tree holds Phase E (Phases A–D are committed).
+2. **Dev-stack verify pending:** end-to-end Verification item 6 (sign in as an org-owner admin, `/admin` lists seeded users, toggling uma's membership flips her chip within a minute) needs the stack up. Also confirms the seeded admin is an org **owner** (a repo-admin-only account would 403 on toggle — by design).
+3. **All phases (A–E) are implemented.** Remaining work is the end-to-end Verification checklist below against a live dev Gitea.
 
 ## Verification (end-to-end, dev stack)
 1. Run `scripts/seed.py` against dev Gitea; confirm accounts `ben.browser` / `uma.user` / `adam.approver` and the `contributors` team.

@@ -65,3 +65,14 @@ async def require_contributor(session: UserSession = Depends(current_session)) -
                    "Ask an admin to add you to the contributors team to "
                    "suggest edits or create prompts.")
     return session
+
+
+async def require_admin(session: UserSession = Depends(current_session)) -> UserSession:
+    """403 unless the user's live-derived role is `admin` (PLAN.MD phase E).
+    Admin endpoints then act with the admin's OWN token — never the bot — so
+    Gitea enforces the real permission on every mutation too."""
+    role = await roles.get_role(session.session_id, session.token)
+    if role != "admin":
+        raise HTTPException(status_code=403,
+                            detail="Only admins can manage users.")
+    return session
