@@ -44,7 +44,7 @@ And four roles: **Browser** (read-only, cannot even suggest), **Contributor** (p
 - Tests: `derive_role` unit tests (push beats team; team+read → contributor; wrong-org team → browser); endpoint 403 for browser on suggest/create.
 - **Verify in dev:** OAuth token works against `GET /user/teams` on the deployed Gitea version.
 
-### Phase C — Owner approves peer suggestions (Community)
+### Phase C — Owner approves peer suggestions (Community) ✅ DONE (2026-07-19, see Handoff notes)
 - `backend/app/ownership.py` — predicate already collapses to "merger owns every file, all community on main+head" regardless of PR author; add `pr_author` to `Decision` for audit.
 - `backend/app/routers/pulls.py` — `list_pulls` annotates contributors' PRs and adds `needs_your_review` (allowed && author != me); `_owner_merge` message distinguishes self vs peer publish.
 - `backend/app/db.py` — `owner_merges` gains `pr_author`, `kind` (`self`|`peer`) via guarded `ALTER TABLE` in `init_db`.
@@ -112,6 +112,24 @@ And four roles: **Browser** (read-only, cannot even suggest), **Contributor** (p
 1. **Not committed** — working tree holds Phase B on top of the committed Phase A.
 2. **Dev-stack verify still pending:** the plan's "OAuth token works against `GET /user/teams` on the deployed Gitea version" check needs the dev stack up. Re-run `scripts/seed.py` (idempotent — it will add the team + `ben.browser` to an existing instance), then sign in as ben.browser (read-only UI, `POST /api/prompts` → 403) and uma.user (Contributor chip, authoring works).
 3. **Phase C is next** (owner approves peer suggestions). Nothing in Phase B blocks it.
+
+### Phase C — implemented 2026-07-19 (this working tree, uncommitted)
+
+**What landed** (all bullets from the Phase C plan):
+
+- `backend/app/ownership.py` — `Decision` gains `pr_author` (default `""`); `decide` takes an optional `pr_author` and passes it through on the allow — the predicate itself never consults it (an owner merges their own change and a peer's under identical conditions; the docstrings say so explicitly). `owner_mergeable` reads the author from the PR payload (`pr["user"]["login"]`, fail-soft to `""`).
+- `backend/app/routers/pulls.py` — `list_pulls` adds `needs_your_review` (= `owner_mergeable && author != viewer`) alongside the existing annotation, still only for non-approvers with owner-merge enabled. `_owner_merge` computes `kind` (`peer` iff `pr_author` present and ≠ merger; unknown author fails soft to `self`), and threads it through the bot review body, the merge commit message ("…approving a suggestion by <author>"), the audit call, the log line, and the success toast ("<author>'s suggestion to your prompt is live.").
+- `backend/app/db.py` — `owner_merges` schema gains `pr_author TEXT NOT NULL DEFAULT ''` and `kind TEXT NOT NULL DEFAULT 'self'`; `init_db` upgrades pre-phase-C databases via `PRAGMA table_info` + guarded `ALTER TABLE` (defaults are the truthful backfill: every old row was a self-publish). `log_owner_merge` / `recent_owner_merges` carry both fields; old call shape still works.
+- `frontend/src/pages/Suggestions.jsx` — "Needs your review (n)" filter chip (shown on the open tab only when the backend flagged at least one PR), a "needs your review" chip on the row, and peer copy: button reads "Approve & publish" (self stays "Publish"), helper says "<author> suggested this change to a prompt you maintain — approving publishes it immediately."
+- Tests — `test_ownership.py`: peer author + owner merger + community → allowed (and `pr_author` carried); peer + bank → denied; merger-not-owner (author merging their own suggestion to someone else's prompt) → denied; `pr_author` defaults empty. New `backend/tests/test_db.py`: audit row records author+kind, default call shape reads as self, legacy-table migration adds the columns and old rows read back as self, `init_db` idempotent. **`python -m pytest tests -q` → 70 passed**; `npm run build` clean.
+
+**Deviations from the plan wording:** none material. Frontend styling reuses the existing `own-chip`/`chip` classes — no styles.css change needed.
+
+**Not yet done / for the next session:**
+
+1. **Not committed** — working tree holds Phases A+B+C.
+2. **Dev-stack verify pending:** end-to-end Verification item 4 (peer flow: adam suggests → uma sees "Needs your review" → publishes → audit row `kind=peer`) needs the dev Gitea up.
+3. **Phase D is next** (personal drafts — the largest). Nothing in Phase C blocks it.
 
 ## Verification (end-to-end, dev stack)
 1. Run `scripts/seed.py` against dev Gitea; confirm accounts `ben.browser` / `uma.user` / `adam.approver` and the `contributors` team.

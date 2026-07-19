@@ -41,11 +41,13 @@ CREATE TABLE IF NOT EXISTS copy_events (
 );
 CREATE INDEX IF NOT EXISTS idx_copy_events_path ON copy_events(path);
 CREATE TABLE IF NOT EXISTS owner_merges (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL,
-    pr_id    INTEGER NOT NULL,
-    paths    TEXT NOT NULL,
-    ts       REAL NOT NULL
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    username  TEXT NOT NULL,
+    pr_id     INTEGER NOT NULL,
+    paths     TEXT NOT NULL,
+    ts        REAL NOT NULL,
+    pr_author TEXT NOT NULL DEFAULT '',
+    kind      TEXT NOT NULL DEFAULT 'self'
 );
 CREATE INDEX IF NOT EXISTS idx_owner_merges_ts ON owner_merges(ts);
 """
@@ -63,6 +65,19 @@ def init_db() -> None:
     os.makedirs(os.path.dirname(os.path.abspath(settings.db_path)), exist_ok=True)
     with connect() as conn:
         conn.executescript(SCHEMA)
+        # Phase C: databases created before pr_author/kind existed get the
+        # columns added here. CREATE IF NOT EXISTS won't touch an existing
+        # table, so this is the upgrade path; the defaults ('', 'self') are
+        # also the truthful backfill — every pre-phase-C merge was a
+        # self-publish with the author unrecorded.
+        existing = {row["name"] for row in
+                    conn.execute("PRAGMA table_info(owner_merges)")}
+        if "pr_author" not in existing:
+            conn.execute("ALTER TABLE owner_merges "
+                         "ADD COLUMN pr_author TEXT NOT NULL DEFAULT ''")
+        if "kind" not in existing:
+            conn.execute("ALTER TABLE owner_merges "
+                         "ADD COLUMN kind TEXT NOT NULL DEFAULT 'self'")
 
 
 # --- sessions ---------------------------------------------------------------
@@ -128,24 +143,32 @@ def log_copy_event(path: str) -> None:
         conn.execute("INSERT INTO copy_events (path, ts) VALUES (?, ?)", (path, time.time()))
 
 
-def log_owner_merge(username: str, pr_id: int, paths: list[str]) -> None:
-    """Record an approver-free publish. Called only after the merge succeeds."""
+def log_owner_merge(username: str, pr_id: int, paths: list[str],
+                    pr_author: str = "", kind: str = "self") -> None:
+    """Record an approver-free publish. Called only after the merge succeeds.
+
+    `kind` is 'self' when the owner published their own change, 'peer' when
+    they published someone else's suggestion — in which case `pr_author` says
+    whose.
+    """
     with connect() as conn:
         conn.execute(
-            "INSERT INTO owner_merges (username, pr_id, paths, ts) VALUES (?, ?, ?, ?)",
-            (username, pr_id, "\n".join(paths), time.time()),
+            "INSERT INTO owner_merges (username, pr_id, paths, ts, pr_author, kind) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (username, pr_id, "\n".join(paths), time.time(), pr_author, kind),
         )
 
 
 def recent_owner_merges(limit: int = 50) -> list[dict]:
     with connect() as conn:
         rows = conn.execute(
-            "SELECT username, pr_id, paths, ts FROM owner_merges "
+            "SELECT username, pr_id, paths, ts, pr_author, kind FROM owner_merges "
             "ORDER BY ts DESC LIMIT ?",
             (limit,),
         ).fetchall()
     return [{"username": r["username"], "pr_id": r["pr_id"],
-             "paths": r["paths"].split("\n"), "ts": r["ts"]} for r in rows]
+             "paths": r["paths"].split("\n"), "ts": r["ts"],
+             "pr_author": r["pr_author"], "kind": r["kind"]} for r in rows]
 
 
 def most_copied(limit: int = 10) -> list[dict]:

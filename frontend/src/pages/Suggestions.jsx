@@ -6,9 +6,15 @@ import DiffView from '../components/DiffView.jsx'
 export default function Suggestions() {
   const user = useUser()
   const [tab, setTab] = useState('open')
+  const [onlyMine, setOnlyMine] = useState(false)
   const [refresh, setRefresh] = useState(0)
   const { data, error, loading } = useAsyncData(() => api.pulls(tab), [tab, refresh])
   const canApprove = user.role === 'approver' || user.role === 'admin'
+
+  // Peer suggestions to prompts this user owns — flagged by the backend,
+  // which is the authority on ownership. Only they can publish these.
+  const needsReview = (data || []).filter((pr) => pr.needs_your_review)
+  const shown = onlyMine && tab === 'open' ? needsReview : data
 
   return (
     <div>
@@ -21,6 +27,14 @@ export default function Suggestions() {
           <button className={`chip ${tab === 'closed' ? 'chip-active' : ''}`} onClick={() => setTab('closed')}>
             Decided
           </button>
+          {tab === 'open' && needsReview.length > 0 && (
+            <button
+              className={`chip ${onlyMine ? 'chip-active' : ''}`}
+              onClick={() => setOnlyMine(!onlyMine)}
+            >
+              Needs your review ({needsReview.length})
+            </button>
+          )}
         </div>
       </div>
 
@@ -32,14 +46,14 @@ export default function Suggestions() {
 
       {loading && <div className="muted">Loading…</div>}
       {error && <div className="alert alert-error">{error}</div>}
-      {data && data.length === 0 && (
+      {shown && shown.length === 0 && (
         <div className="empty">
           {tab === 'open' ? 'No suggestions waiting for review.' : 'No decided suggestions yet.'}
         </div>
       )}
 
       <div className="history-list">
-        {(data || []).map((pr) => (
+        {(shown || []).map((pr) => (
           <SuggestionItem
             key={pr.id}
             pr={pr}
@@ -48,6 +62,7 @@ export default function Suggestions() {
             // approver. The backend authorizes this; the flag only chooses
             // which button and helper text to show.
             canPublishAsOwner={!canApprove && pr.state === 'open' && !!pr.owner_mergeable}
+            isPeerSuggestion={!!pr.needs_your_review}
             isOwn={pr.author === user.username}
             onMerged={() => setRefresh((n) => n + 1)}
           />
@@ -57,7 +72,7 @@ export default function Suggestions() {
   )
 }
 
-function SuggestionItem({ pr, canApprove, canPublishAsOwner, isOwn, onMerged }) {
+function SuggestionItem({ pr, canApprove, canPublishAsOwner, isPeerSuggestion, isOwn, onMerged }) {
   const [open, setOpen] = useState(false)
   const [diff, setDiff] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -95,6 +110,7 @@ function SuggestionItem({ pr, canApprove, canPublishAsOwner, isOwn, onMerged }) 
         <span className="history-message">
           {pr.title}
           {isOwn && <span className="own-chip">yours</span>}
+          {isPeerSuggestion && <span className="own-chip">needs your review</span>}
           {pr.state !== 'open' && (
             <span className={`badge ${pr.state === 'merged' ? 'badge-approved' : 'badge-deprecated'}`}>
               {pr.state === 'merged' ? 'Published' : 'Declined'}
@@ -114,11 +130,17 @@ function SuggestionItem({ pr, canApprove, canPublishAsOwner, isOwn, onMerged }) 
           {(canApprove || canPublishAsOwner) && !done && (
             <div className="editor-actions">
               <button className="btn btn-primary" onClick={approve} disabled={busy}>
-                {busy ? 'Publishing…' : canPublishAsOwner ? 'Publish' : 'Approve & publish'}
+                {busy
+                  ? 'Publishing…'
+                  : canPublishAsOwner
+                    ? (isPeerSuggestion ? 'Approve & publish' : 'Publish')
+                    : 'Approve & publish'}
               </button>
               {canPublishAsOwner ? (
                 <span className="muted small">
-                  You own this prompt — publishing applies your change immediately.
+                  {isPeerSuggestion
+                    ? `${pr.author_name} suggested this change to a prompt you maintain — approving publishes it immediately.`
+                    : 'You own this prompt — publishing applies your change immediately.'}
                 </span>
               ) : (
                 isOwn && (

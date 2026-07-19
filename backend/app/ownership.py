@@ -39,10 +39,16 @@ MAX_PR_FILES = 50
 
 @dataclass(frozen=True)
 class Decision:
-    """Why a PR is or isn't owner-mergeable. `reason` is for logs, not users."""
+    """Why a PR is or isn't owner-mergeable. `reason` is for logs, not users.
+
+    `pr_author` is who opened the PR — carried for the audit trail (phase C:
+    the merger and the author differ on a peer suggestion), never consulted
+    by the predicate itself: authorization depends only on who is merging.
+    """
     allowed: bool
     reason: str
     paths: tuple[str, ...] = ()
+    pr_author: str = ""
 
 
 @dataclass(frozen=True)
@@ -75,7 +81,7 @@ def level_of(raw: str) -> str:
 
 def decide(username: str, paths: list[str],
            facts_on_main: dict[str, FileFacts | None],
-           levels_on_head: dict[str, str]) -> Decision:
+           levels_on_head: dict[str, str], pr_author: str = "") -> Decision:
     """Pure predicate: may `username` merge a PR touching `paths`?
 
     `facts_on_main` maps each path to its owner and level AS READ FROM MAIN —
@@ -89,6 +95,10 @@ def decide(username: str, paths: list[str],
     PR whose head turns a community file into `level: bank` must go to an
     approver, or the owner-merge would mint a bank prompt no Bank Approver
     ever saw. A path missing from the map denies.
+
+    `pr_author` (who opened the PR) is passed through to the Decision for the
+    audit log. It plays no part in the answer: an owner may merge their own
+    change and a peer's suggestion under exactly the same conditions.
     """
     if not username:
         return Decision(False, "no user")
@@ -115,7 +125,7 @@ def decide(username: str, paths: list[str],
             return Decision(False, f"not community on PR head: {path}")
 
     return Decision(True, f"{username} owns all {len(paths)} community file(s)",
-                    tuple(paths))
+                    tuple(paths), pr_author)
 
 
 async def owner_mergeable(token: str, username: str, pr_id: int) -> Decision:
@@ -138,6 +148,8 @@ async def owner_mergeable(token: str, username: str, pr_id: int) -> Decision:
     head_sha = (pr.get("head") or {}).get("sha")
     if not head_sha:
         return Decision(False, "PR has no head sha")
+
+    pr_author = str((pr.get("user") or {}).get("login") or "")
 
     try:
         files = await gitea.api(
@@ -183,4 +195,4 @@ async def owner_mergeable(token: str, username: str, pr_id: int) -> Decision:
             return Decision(False, f"could not read {path} on PR head")
         levels_on_head[path] = level_of(head_raw)
 
-    return decide(username, paths, facts, levels_on_head)
+    return decide(username, paths, facts, levels_on_head, pr_author)

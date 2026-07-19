@@ -64,6 +64,9 @@ async def list_pulls(state: str = "open",
     # "Publish" instead of "Approve & publish". Advisory only — the merge
     # endpoint re-checks. Skipped entirely for approvers, who already have the
     # button, and when no service account is configured.
+    #
+    # `needs_your_review` marks the phase-C peer case: someone else's
+    # suggestion to a prompt this viewer owns, which only they can publish.
     if settings.owner_merge_enabled and not await _can_approve(session):
         for summary in summaries:
             if summary["state"] != "open":
@@ -71,6 +74,8 @@ async def list_pulls(state: str = "open",
             decision = await ownership.owner_mergeable(
                 session.token, session.username, summary["id"])
             summary["owner_mergeable"] = decision.allowed
+            summary["needs_your_review"] = (
+                decision.allowed and summary["author"] != session.username)
     return summaries
 
 
@@ -132,13 +137,23 @@ async def _owner_merge(session: UserSession, pr_id: int,
     id. Branch protection still requires an approval, so the bot approves as
     well — that approval is a record of the app's check having passed, which is
     why the merge message names both identities.
+
+    Phase C: the same path publishes a peer's suggestion to a prompt the
+    merger owns — the audit row and merge message then record both the owner
+    who approved (`username`) and the peer who authored (`pr_author`).
     """
     paths = list(decision.paths)
+    peer = bool(decision.pr_author) and decision.pr_author != session.username
+    kind = "peer" if peer else "self"
+    review_body = (
+        f"Published by {session.username}, owner of {', '.join(paths)}, "
+        f"approving a suggestion by {decision.pr_author}."
+        if peer else
+        f"Published by {session.username}, owner of {', '.join(paths)}."
+    )
     try:
         await gitea.bot_api("POST", f"{settings.repo_api}/pulls/{pr_id}/reviews",
-                            json={"event": "APPROVED",
-                                  "body": f"Published by {session.username}, "
-                                          f"owner of {', '.join(paths)}."})
+                            json={"event": "APPROVED", "body": review_body})
     except HTTPException as exc:
         if exc.status_code not in (403, 422):  # already approved / self-review
             raise
@@ -146,19 +161,29 @@ async def _owner_merge(session: UserSession, pr_id: int,
     pr = await gitea.api(session.token, "GET", f"{settings.repo_api}/pulls/{pr_id}")
     title = pr.get("title", "") if isinstance(pr, dict) else ""
 
+    merge_message = (
+        f"Merged by {session.username} as owner of {', '.join(paths)}, "
+        f"approving a suggestion by {decision.pr_author}."
+        if peer else
+        f"Merged by {session.username} as owner of {', '.join(paths)}."
+    )
     await gitea.bot_api(
         "POST", f"{settings.repo_api}/pulls/{pr_id}/merge",
         json={
             "Do": "merge",
             "delete_branch_after_merge": True,
             "MergeTitleField": f"Publish (owner merge): {title}",
-            "MergeMessageField": f"Merged by {session.username} as owner of "
-                                 f"{', '.join(paths)}.",
+            "MergeMessageField": merge_message,
         },
     )
 
     # Audit AFTER the merge lands, so the log records publishes that happened.
-    db.log_owner_merge(session.username, pr_id, paths)
-    log.info("owner-merge: %s published PR %s (%s)",
-             session.username, pr_id, ", ".join(paths))
+    db.log_owner_merge(session.username, pr_id, paths,
+                       pr_author=decision.pr_author, kind=kind)
+    log.info("owner-merge (%s): %s published PR %s by %s (%s)",
+             kind, session.username, pr_id, decision.pr_author or "unknown",
+             ", ".join(paths))
+    if peer:
+        return {"message": f"Published. {decision.pr_author}'s suggestion "
+                           "to your prompt is live."}
     return {"message": "Published. Your change is live."}

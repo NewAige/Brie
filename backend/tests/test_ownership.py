@@ -143,6 +143,41 @@ def test_owner_is_case_and_whitespace_exact():
                       heads(OWNED)).allowed
 
 
+# --- phase C: peer suggestions ----------------------------------------------
+
+def test_peer_suggestion_to_owned_community_file_allowed():
+    """Phase C: who authored the PR is irrelevant to the predicate — an owner
+    may publish a peer's suggestion under exactly the same conditions as their
+    own. The author is carried on the Decision for the audit trail."""
+    result = decide(UMA, [OWNED], {OWNED: community(UMA)}, heads(OWNED),
+                    pr_author=ADAM)
+    assert result.allowed
+    assert result.pr_author == ADAM
+
+
+def test_peer_suggestion_to_bank_file_denied():
+    """A peer suggestion to a bank prompt goes to a Bank Approver, owner or
+    not."""
+    result = decide(UMA, [OWNED], {OWNED: bank(UMA)}, heads(OWNED),
+                    pr_author=ADAM)
+    assert not result.allowed
+
+
+def test_peer_merger_who_is_not_owner_denied():
+    """Being the PR's author or reviewer grants nothing — only the file's
+    owner (per main) may merge, whoever wrote the change."""
+    result = decide(ADAM, [OWNED], {OWNED: community(UMA)}, heads(OWNED),
+                    pr_author=ADAM)
+    assert not result.allowed
+
+
+def test_pr_author_defaults_empty():
+    """Callers that don't know the author (or pre-checks) still work."""
+    result = decide(UMA, [OWNED], {OWNED: community(UMA)}, heads(OWNED))
+    assert result.allowed
+    assert result.pr_author == ""
+
+
 # --- owner_of ---------------------------------------------------------------
 
 def test_owner_of_reads_front_matter():
