@@ -1,11 +1,14 @@
-"""Unit tests for the owner-merge predicate (docs/phase-2-ownership.md).
+"""Unit tests for the owner-merge predicate (docs/phase-2-ownership.md,
+tightened by PLAN.MD phase A: levels).
 
 No Gitea: `decide` is pure, taking an already-fetched view of the PR. These
-cover the cases the design calls out, and the leak case in particular — a PR
-mixing an owned file with an unowned one must be denied.
+cover the cases the design calls out — the mixed-PR leak case, and the two
+phase-A denials in particular: bank-on-main (owned bank prompts are never
+owner-mergeable) and bank-on-head (an owner cannot self-merge a flip to
+`level: bank`).
 """
 
-from app.ownership import MAX_PR_FILES, decide, owner_of
+from app.ownership import MAX_PR_FILES, FileFacts, decide, level_of, owner_of
 
 UMA = "uma.user"
 ADAM = "adam.approver"
@@ -14,72 +17,130 @@ OWNED = "customer-support/account-balance-faq.md"
 OTHER = "customer-support/card-dispute.md"
 
 
-def test_single_owned_file_allowed():
-    result = decide(UMA, [OWNED], {OWNED: UMA})
+def community(owner: str) -> FileFacts:
+    return FileFacts(owner=owner, level="community")
+
+
+def bank(owner: str) -> FileFacts:
+    return FileFacts(owner=owner, level="bank")
+
+
+def heads(*paths: str) -> dict[str, str]:
+    """All paths community on the PR head — the well-behaved case."""
+    return {p: "community" for p in paths}
+
+
+def test_owned_community_file_allowed():
+    result = decide(UMA, [OWNED], {OWNED: community(UMA)}, heads(OWNED))
     assert result.allowed
     assert result.paths == (OWNED,)
 
 
+def test_owned_bank_file_denied():
+    """The phase-A tightening: ownership no longer suffices — a bank-level
+    prompt always goes to an approver, even for its owner."""
+    result = decide(UMA, [OWNED], {OWNED: bank(UMA)}, heads(OWNED))
+    assert not result.allowed
+    assert "bank-level on main" in result.reason
+
+
+def test_absent_level_is_bank_and_denied():
+    """FileFacts built from a file with no `level` carries "bank" (fail
+    closed), which denies. Modelled via level_of below; here at facts level."""
+    assert not decide(UMA, [OWNED], {OWNED: FileFacts(UMA, "bank")},
+                      heads(OWNED)).allowed
+
+
+def test_community_on_main_bank_on_head_denied():
+    """The forged-level attack: a PR flipping community → bank on an owned
+    file must not be owner-mergeable, or the owner mints a "bank approved"
+    prompt no Bank Approver ever saw."""
+    result = decide(UMA, [OWNED], {OWNED: community(UMA)}, {OWNED: "bank"})
+    assert not result.allowed
+    assert "not community on PR head" in result.reason
+
+
+def test_missing_head_level_denied():
+    """A path absent from the head map (unreadable, deleted on head) denies."""
+    assert not decide(UMA, [OWNED], {OWNED: community(UMA)}, {}).allowed
+
+
 def test_single_unowned_file_denied():
-    assert not decide(UMA, [OWNED], {OWNED: ADAM}).allowed
+    assert not decide(UMA, [OWNED], {OWNED: community(ADAM)}, heads(OWNED)).allowed
 
 
 def test_mixed_ownership_denied():
     """The leak case: naive checks quantify over *any* file instead of *all*."""
-    result = decide(UMA, [OWNED, OTHER], {OWNED: UMA, OTHER: ADAM})
+    result = decide(UMA, [OWNED, OTHER],
+                    {OWNED: community(UMA), OTHER: community(ADAM)},
+                    heads(OWNED, OTHER))
+    assert not result.allowed
+
+
+def test_mixed_levels_denied():
+    """A PR mixing an owned community file with an owned bank file is denied
+    whole — no partial owner-merge."""
+    result = decide(UMA, [OWNED, OTHER],
+                    {OWNED: community(UMA), OTHER: bank(UMA)},
+                    heads(OWNED, OTHER))
     assert not result.allowed
 
 
 def test_new_file_denied_even_when_claiming_ownership():
     """Not on main => None. Self-publishing a new prompt is authoring, not
     ownership, however the front-matter reads."""
-    assert not decide(UMA, [OWNED], {OWNED: None}).allowed
+    assert not decide(UMA, [OWNED], {OWNED: None}, heads(OWNED)).allowed
 
 
 def test_absent_owner_denied():
-    """Seed prompts have no `owner` — they stay approver-only."""
-    assert not decide(UMA, [OWNED], {OWNED: ""}).allowed
+    """Unowned prompts stay approver-only."""
+    assert not decide(UMA, [OWNED], {OWNED: community("")}, heads(OWNED)).allowed
 
 
 def test_uses_main_not_pr_head():
-    """`decide` only ever sees main's value; a PR that rewrites `owner` to the
-    requester cannot influence it. Modelled here as main still saying Adam."""
-    assert not decide(UMA, [OWNED], {OWNED: ADAM}).allowed
+    """`decide` only ever sees main's owner value; a PR that rewrites `owner`
+    to the requester cannot influence it. Modelled here as main still saying
+    Adam."""
+    assert not decide(UMA, [OWNED], {OWNED: community(ADAM)}, heads(OWNED)).allowed
 
 
 def test_empty_file_list_denied():
-    assert not decide(UMA, [], {}).allowed
+    assert not decide(UMA, [], {}, {}).allowed
 
 
-def test_missing_owner_entry_denied():
+def test_missing_facts_entry_denied():
     """A path absent from the map is 'couldn't determine' => denied."""
-    assert not decide(UMA, [OWNED], {}).allowed
+    assert not decide(UMA, [OWNED], {}, heads(OWNED)).allowed
 
 
 def test_non_prompt_file_denied():
     for path in ("_templates/prompt-template.md", "README.md",
                  "customer-support/README.md", "notes.txt", "../escape.md"):
-        assert not decide(UMA, [path], {path: UMA}).allowed, path
+        assert not decide(UMA, [path], {path: community(UMA)},
+                          heads(path)).allowed, path
 
 
 def test_over_file_cap_denied():
     paths = [f"cat/prompt-{i}.md" for i in range(MAX_PR_FILES + 1)]
-    assert not decide(UMA, paths, {p: UMA for p in paths}).allowed
+    assert not decide(UMA, paths, {p: community(UMA) for p in paths},
+                      heads(*paths)).allowed
 
 
 def test_at_file_cap_allowed():
     paths = [f"cat/prompt-{i}.md" for i in range(MAX_PR_FILES)]
-    assert decide(UMA, paths, {p: UMA for p in paths}).allowed
+    assert decide(UMA, paths, {p: community(UMA) for p in paths},
+                  heads(*paths)).allowed
 
 
 def test_blank_username_denied():
-    assert not decide("", [OWNED], {OWNED: ""}).allowed
+    assert not decide("", [OWNED], {OWNED: community("")}, heads(OWNED)).allowed
 
 
 def test_owner_is_case_and_whitespace_exact():
     """Gitea usernames are matched exactly, bar surrounding whitespace."""
-    assert decide(UMA, [OWNED], {OWNED: UMA}).allowed
-    assert not decide(UMA, [OWNED], {OWNED: "Uma.User"}).allowed
+    assert decide(UMA, [OWNED], {OWNED: community(UMA)}, heads(OWNED)).allowed
+    assert not decide(UMA, [OWNED], {OWNED: community("Uma.User")},
+                      heads(OWNED)).allowed
 
 
 # --- owner_of ---------------------------------------------------------------
@@ -109,3 +170,27 @@ def test_owner_of_non_scalar_is_empty():
     """A list owner is not a v1 owner — deny rather than guess which entry."""
     assert owner_of(f"---\nowner: [{UMA}, {ADAM}]\n---\n\nBody\n") == ""
     assert owner_of("---\nowner:\n  name: uma\n---\n\nBody\n") == ""
+
+
+# --- level_of ---------------------------------------------------------------
+
+def test_level_of_community():
+    assert level_of("---\nlevel: community\n---\n\nBody\n") == "community"
+
+
+def test_level_of_bank():
+    assert level_of("---\nlevel: bank\n---\n\nBody\n") == "bank"
+
+
+def test_level_of_absent_is_bank():
+    assert level_of("---\ntitle: Thing\n---\n\nBody\n") == "bank"
+
+
+def test_level_of_junk_is_bank():
+    """Anything but the exact scalar "community" fails closed to bank."""
+    assert level_of("---\nlevel: Community\n---\n\nBody\n") == "bank"
+    assert level_of("---\nlevel: [community]\n---\n\nBody\n") == "bank"
+    assert level_of("---\nlevel: personal\n---\n\nBody\n") == "bank"
+    assert level_of("---\nlevel:\n---\n\nBody\n") == "bank"
+    assert level_of("No front-matter at all.\n") == "bank"
+    assert level_of("---\nlevel: [unclosed\n---\n\nBody\n") == "bank"

@@ -4,6 +4,7 @@ import { useAsyncData, useUser } from '../hooks.js'
 import { api } from '../api.js'
 import CopyButton from '../components/CopyButton.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
+import LevelBadge from '../components/LevelBadge.jsx'
 
 export default function PromptDetail() {
   // Path after /prompt/ — may contain slashes.
@@ -25,8 +26,9 @@ export default function PromptDetail() {
 
       <div className="detail-head">
         <h1>{prompt.title}</h1>
+        <LevelBadge level={prompt.level} owner={prompt.owner} />
         <StatusBadge status={prompt.status} />
-        {prompt.owner && prompt.owner === user.username && (
+        {prompt.level === 'community' && prompt.owner && prompt.owner === user.username && (
           <span className="badge badge-owner" title="You can publish changes to this prompt without waiting for an approver.">
             You maintain this
           </span>

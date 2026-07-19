@@ -1,6 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import StatusBadge from './StatusBadge.jsx'
+import LevelBadge from './LevelBadge.jsx'
 
 export default function PromptCard({ prompt, onTagClick }) {
   return (
@@ -9,6 +10,7 @@ export default function PromptCard({ prompt, onTagClick }) {
         <Link className="card-title" to={`/prompt/${prompt.path}`}>
           {prompt.title}
         </Link>
+        <LevelBadge level={prompt.level} owner={prompt.owner} compact />
         <StatusBadge status={prompt.status} />
       </div>
       {prompt.intended_use && <p className="card-sub">{prompt.intended_use}</p>}

@@ -46,6 +46,16 @@ def split_front_matter(raw: str) -> tuple[str | None, dict, str]:
     return None, {}, text.lstrip("\n")
 
 
+def prompt_level(meta: dict) -> str:
+    """The governance level of a prompt: "community" iff the front-matter says
+    exactly that, else "bank". Fail closed: a missing, misspelled, or
+    non-scalar `level` is Bank — the stricter tier (docs/PLAN.MD phase A)."""
+    level = meta.get("level")
+    if isinstance(level, str) and level.strip() == "community":
+        return "community"
+    return "bank"
+
+
 def parse_prompt(path: str, raw: str) -> dict:
     """Parse one prompt file into the structure the API returns."""
     fm_block, meta, body = split_front_matter(raw)
@@ -59,6 +69,7 @@ def parse_prompt(path: str, raw: str) -> dict:
         "title": str(meta.get("title") or _title_from_path(path)),
         "tags": [str(t) for t in tags],
         "status": str(meta.get("status") or "draft"),
+        "level": prompt_level(meta),
         "author": str(meta.get("author") or ""),
         "owner": str(meta.get("owner") or ""),
         "copied_from": str(meta.get("copied_from") or ""),

@@ -3,6 +3,7 @@ title: Product Blurb Rewriter
 category: marketing
 tags: [marketing, internal, copywriting]
 status: draft
+level: bank
 author: rlee
 target_model: internal-chatbot-v1
 intended_use: Rewrite product descriptions for the intranet in the bank's voice

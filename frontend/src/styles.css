@@ -121,6 +121,8 @@ a:hover { text-decoration: underline; }
 .badge-deprecated { background: var(--red-bg); color: var(--red); }
 /* Ownership: this user may publish changes here without an approver. */
 .badge-owner { background: #e8f0fb; color: var(--accent-dark); }
+.badge-bank { background: #e8f0fb; color: var(--accent-dark); }
+.badge-community { background: #f1eafb; color: #6d3fa8; }
 
 /* Detail */
 .detail-head { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem; }

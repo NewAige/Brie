@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api", dependencies=[Depends(current_session)])
 
 
 def _public(prompt: dict, with_body: bool) -> dict:
-    fields = ["path", "category", "title", "tags", "status", "author",
+    fields = ["path", "category", "title", "tags", "status", "level", "author",
               "owner", "copied_from", "target_model", "intended_use", "review_notes"]
     out = {k: prompt[k] for k in fields}
     if with_body:
@@ -181,6 +181,10 @@ async def create_prompt(new: NewPrompt,
         "category": category,
         "tags": tags,
         "status": "draft",
+        # User-created prompts are Community — owner-maintained after the
+        # first approval. An approver reviews this PR before it lands, so the
+        # level is itself approved, not self-granted.
+        "level": "community",
         "author": session.username,
         "owner": session.username,
         "target_model": new.target_model,

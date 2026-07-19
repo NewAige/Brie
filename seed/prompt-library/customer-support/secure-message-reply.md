@@ -3,6 +3,7 @@ title: Secure Message Reply Drafter
 category: customer-support
 tags: [support, customer-facing, messaging]
 status: in-review
+level: bank
 author: apatel
 target_model: internal-chatbot-v1
 intended_use: Draft a reply to a customer secure message for agent review before sending

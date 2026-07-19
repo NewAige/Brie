@@ -3,6 +3,7 @@ title: Legacy Report Formatter
 category: internal-ops
 tags: [internal, reporting]
 status: deprecated
+level: bank
 author: jsmith
 target_model: internal-chatbot-v1
 intended_use: Superseded by the Meeting Minutes Summarizer — kept for reference only

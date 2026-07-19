@@ -3,6 +3,7 @@ title: Meeting Minutes Summarizer
 category: internal-ops
 tags: [internal, productivity, meetings]
 status: approved
+level: bank
 author: mchen
 target_model: internal-chatbot-v1
 intended_use: Turn raw meeting notes into structured minutes with actions and owners
