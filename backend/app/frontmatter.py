@@ -60,6 +60,8 @@ def parse_prompt(path: str, raw: str) -> dict:
         "tags": [str(t) for t in tags],
         "status": str(meta.get("status") or "draft"),
         "author": str(meta.get("author") or ""),
+        "owner": str(meta.get("owner") or ""),
+        "copied_from": str(meta.get("copied_from") or ""),
         "target_model": str(meta.get("target_model") or ""),
         "intended_use": str(meta.get("intended_use") or ""),
         "review_notes": str(meta.get("review_notes") or ""),
@@ -76,6 +78,30 @@ def replace_body(raw: str, new_body: str) -> str:
     if fm_block is None:
         return new_body + "\n"
     return f"{fm_block}\n\n{new_body}\n"
+
+
+def render_prompt(meta: dict, body: str) -> str:
+    """Render a brand-new prompt file: front-matter block + body.
+
+    Field order follows _templates/prompt-template.md. Empty values are
+    omitted. Values are emitted through yaml.safe_dump per key so titles
+    containing `:` or quotes stay valid YAML — except lists, which are
+    rendered flow-style (`[a, b]`) to match the hand-authored files; list
+    items are expected to be pre-slugified by the caller.
+    """
+    lines = [DELIMITER]
+    for key, value in meta.items():
+        if value is None or value == "" or value == []:
+            continue
+        if isinstance(value, list):
+            lines.append(f"{key}: [{', '.join(value)}]")
+        else:
+            # Single-line fields only: collapse any stray newlines.
+            value = " ".join(str(value).split())
+            lines.append(yaml.safe_dump({key: value}, allow_unicode=True,
+                                        width=100000).strip())
+    lines.append(DELIMITER)
+    return "\n".join(lines) + "\n\n" + body.replace("\r\n", "\n").strip("\n") + "\n"
 
 
 def _title_from_path(path: str) -> str:

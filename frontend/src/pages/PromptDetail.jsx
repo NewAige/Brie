@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
-import { useAsyncData } from '../hooks.js'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useAsyncData, useUser } from '../hooks.js'
 import { api } from '../api.js'
 import CopyButton from '../components/CopyButton.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
@@ -9,8 +9,10 @@ export default function PromptDetail() {
   // Path after /prompt/ — may contain slashes.
   const path = decodeURIComponent(useLocation().pathname.replace(/^\/prompt\//, ''))
   const { data: prompt, error, loading } = useAsyncData(() => api.prompt(path), [path])
+  const user = useUser()
   const [editing, setEditing] = useState(false)
   const [sent, setSent] = useState(null)
+  const navigate = useNavigate()
 
   if (loading) return <div className="muted">Loading…</div>
   if (error) return <div className="alert alert-error">{error}</div>
@@ -24,6 +26,11 @@ export default function PromptDetail() {
       <div className="detail-head">
         <h1>{prompt.title}</h1>
         <StatusBadge status={prompt.status} />
+        {prompt.owner && prompt.owner === user.username && (
+          <span className="badge badge-owner" title="You can publish changes to this prompt without waiting for an approver.">
+            You maintain this
+          </span>
+        )}
       </div>
 
       <div className="meta-card card">
@@ -44,6 +51,12 @@ export default function PromptDetail() {
             <>
               <dt>Author</dt>
               <dd>{prompt.author}</dd>
+            </>
+          )}
+          {prompt.copied_from && (
+            <>
+              <dt>Copied from</dt>
+              <dd><Link to={`/prompt/${prompt.copied_from}`}>{prompt.copied_from}</Link></dd>
             </>
           )}
           {prompt.review_notes && (
@@ -76,6 +89,9 @@ export default function PromptDetail() {
         <CopyButton text={prompt.body} path={prompt.path} large />
         <button className="btn" onClick={() => { setEditing(!editing); setSent(null) }}>
           {editing ? 'Cancel suggestion' : 'Suggest an edit'}
+        </button>
+        <button className="btn" onClick={() => navigate('/new', { state: { from: prompt } })}>
+          Make a copy
         </button>
         <Link className="btn btn-quiet" to={`/history/${prompt.path}`}>History</Link>
       </div>

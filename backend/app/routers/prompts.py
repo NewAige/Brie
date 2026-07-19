@@ -11,14 +11,15 @@ from pydantic import BaseModel, Field
 from .. import db, gitea, prompt_index
 from ..config import settings
 from ..deps import UserSession, current_session
-from ..frontmatter import parse_prompt, replace_body, split_front_matter
+from ..frontmatter import parse_prompt, render_prompt, replace_body, split_front_matter
+from ..paths import is_prompt_file, slugify
 
 router = APIRouter(prefix="/api", dependencies=[Depends(current_session)])
 
 
 def _public(prompt: dict, with_body: bool) -> dict:
     fields = ["path", "category", "title", "tags", "status", "author",
-              "target_model", "intended_use", "review_notes"]
+              "owner", "copied_from", "target_model", "intended_use", "review_notes"]
     out = {k: prompt[k] for k in fields}
     if with_body:
         out["body"] = prompt["body"]
@@ -130,28 +131,73 @@ async def suggest_edit(path: str, suggestion: Suggestion,
 
     new_content = replace_body(current["text"], suggestion.body)
     title = str(meta.get("title") or path)
-    branch = _branch_name(session.username)
-    message = f"Suggest edit: {title}\n\n{suggestion.note}"
-
-    repo = await gitea.api(session.token, "GET", settings.repo_api)
-    if (repo.get("permissions") or {}).get("push"):
-        await _commit_to_new_branch(session.token, settings.repo_api, path,
-                                    base_branch="main", new_branch=branch,
-                                    content=new_content, message=message)
-        head = branch
-    else:
-        fork = await _ensure_fork(session.token, session.username)
-        await _commit_to_new_branch(session.token, f"/repos/{fork['full_name']}", path,
-                                    base_branch=fork["default_branch"] or "main",
-                                    new_branch=branch, content=new_content, message=message)
-        head = f"{fork['owner']['login']}:{branch}"
-
-    pr = await gitea.api(
-        session.token, "POST", f"{settings.repo_api}/pulls",
-        json={"base": "main", "head": head,
-              "title": f"Suggestion: {title}", "body": suggestion.note},
+    pr = await _propose_change(
+        session, path, new_content,
+        branch=_branch_name(session.username, "suggest"),
+        message=f"Suggest edit: {title}\n\n{suggestion.note}",
+        pr_title=f"Suggestion: {title}", pr_body=suggestion.note,
     )
     return {"message": "Your suggestion has been sent for review.", "id": pr["number"]}
+
+
+class NewPrompt(BaseModel):
+    title: str = Field(min_length=3, max_length=120)
+    category: str = Field(min_length=1, max_length=60)
+    body: str = Field(min_length=1, description="The prompt text (no front-matter)")
+    tags: list[str] = Field(default_factory=list, max_length=10)
+    intended_use: str = Field("", max_length=300)
+    target_model: str = Field("", max_length=100)
+    copied_from: str = Field("", description="Path of the prompt this was copied from, if any")
+
+
+@router.post("/prompts")
+async def create_prompt(new: NewPrompt,
+                        session: UserSession = Depends(current_session)):
+    """Create a brand-new prompt (from scratch, or "Make a copy" of an
+    existing one) as a PR, through the same fork/branch chain as suggestions.
+    The path is derived server-side: <category-slug>/<title-slug>.md."""
+    category = slugify(new.category)
+    slug = slugify(new.title)
+    if not category or not slug:
+        raise HTTPException(status_code=400,
+                            detail="Title and category must contain letters or numbers.")
+    path = f"{category}/{slug}.md"
+    if not is_prompt_file(path):
+        raise HTTPException(status_code=400, detail="That name is reserved.")
+    if await _file_exists(session.token, path):
+        raise HTTPException(status_code=409,
+                            detail="A prompt with this name already exists in that category.")
+    if await _pending_pr_for(session.token, path):
+        raise HTTPException(
+            status_code=409,
+            detail="A prompt with this name is already waiting for review. "
+                   "Pick a different title, or find it under Suggestions.")
+    if new.copied_from:
+        _require_valid_path(new.copied_from)
+
+    tags = list(dict.fromkeys(t for t in (slugify(t) for t in new.tags) if t))
+    content = render_prompt({
+        "title": new.title.strip(),
+        "category": category,
+        "tags": tags,
+        "status": "draft",
+        "author": session.username,
+        "owner": session.username,
+        "target_model": new.target_model,
+        "intended_use": new.intended_use,
+        "copied_from": new.copied_from,
+    }, new.body)
+
+    origin = f"\n\nCopied from `{new.copied_from}`." if new.copied_from else ""
+    pr = await _propose_change(
+        session, path, content,
+        branch=_branch_name(session.username, "new"),
+        message=f"New prompt: {new.title.strip()}{origin}",
+        pr_title=f"New prompt: {new.title.strip()}",
+        pr_body=(new.intended_use or "New prompt.") + origin,
+    )
+    return {"message": "Your new prompt has been sent for review.",
+            "id": pr["number"], "path": path}
 
 
 class CopyEvent(BaseModel):
@@ -183,9 +229,67 @@ async def _fetch_file(token: str, path: str) -> dict:
     return {"sha": data["sha"], "text": base64.b64decode(data["content"]).decode("utf-8")}
 
 
-def _branch_name(username: str) -> str:
+def _branch_name(username: str, prefix: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9._-]", "-", username).strip("-.") or "user"
-    return f"suggest/{slug}-{int(time.time() * 1000)}"
+    return f"{prefix}/{slug}-{int(time.time() * 1000)}"
+
+
+async def _file_exists(token: str, path: str) -> bool:
+    try:
+        data = await gitea.api(token, "GET", f"{settings.repo_api}/contents/{path}",
+                               params={"ref": "main"})
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return False
+        raise
+    return data.get("type") == "file"
+
+
+async def _pending_pr_for(token: str, path: str) -> bool:
+    """Is an open PR already proposing this exact new path?
+
+    A brand-new prompt isn't on main yet, so `_file_exists` can't see one that
+    is merely awaiting review — without this, submitting the same title twice
+    silently opens a second competing PR.
+    """
+    pulls = await gitea.api(token, "GET", f"{settings.repo_api}/pulls",
+                            params={"state": "open", "limit": 50})
+    for pull in pulls or []:
+        try:
+            files = await gitea.api(
+                token, "GET", f"{settings.repo_api}/pulls/{pull['number']}/files",
+                params={"limit": 50},
+            )
+        except HTTPException:
+            continue  # a PR we can't read can't be shown to the user anyway
+        if any(f.get("filename") == path for f in files or []):
+            return True
+    return False
+
+
+async def _propose_change(session: UserSession, path: str, content: str, *,
+                          branch: str, message: str,
+                          pr_title: str, pr_body: str) -> dict:
+    """Commit `content` to `path` on a new branch and open a PR against main,
+    using the USER's own token. Users with push access branch inside the
+    library repo; read-only users go through their transparently-managed fork."""
+    repo = await gitea.api(session.token, "GET", settings.repo_api)
+    if (repo.get("permissions") or {}).get("push"):
+        await _commit_to_new_branch(session.token, settings.repo_api, path,
+                                    base_branch="main", new_branch=branch,
+                                    content=content, message=message)
+        head = branch
+    else:
+        fork = await _ensure_fork(session.token, session.username)
+        await _commit_to_new_branch(session.token, f"/repos/{fork['full_name']}", path,
+                                    base_branch=fork["default_branch"] or "main",
+                                    new_branch=branch, content=content, message=message)
+        head = f"{fork['owner']['login']}:{branch}"
+
+    return await gitea.api(
+        session.token, "POST", f"{settings.repo_api}/pulls",
+        json={"base": "main", "head": head, "title": pr_title, "body": pr_body},
+    )
 
 
 async def _commit_to_new_branch(token: str, repo_api: str, path: str, *,

@@ -1,8 +1,17 @@
 """Prompt path rules. Kept dependency-free so it's trivially unit-testable."""
 
 import posixpath
+import re
+import unicodedata
 
 EXCLUDED_DIRS = {"_templates"}
+
+
+def slugify(text: str) -> str:
+    """Filename-safe slug: lowercase ascii, words joined by single dashes.
+    Returns "" if nothing usable survives (caller decides how to fail)."""
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
 def is_valid_prompt_path(path: str) -> bool:

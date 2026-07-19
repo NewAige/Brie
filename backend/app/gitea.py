@@ -1,9 +1,12 @@
 """Thin async client for the Gitea API.
 
-Every call carries an individual user's OAuth token — there is deliberately no
-service account (spec §5, hard requirements). Gitea enforces the real
-permissions on every request; this backend never makes authorization
-decisions of its own.
+Every READ carries an individual user's OAuth token, so Gitea enforces the real
+permissions on every request (spec §5).
+
+The one deliberate exception is `bot_api`, added in phase 2: owner-merges are
+executed with a service account, because Gitea cannot express "may merge only
+the files they own" (docs/phase-2-ownership.md). It is used only to write, only
+after the app's ownership check has passed, and never for reads.
 """
 
 import httpx
@@ -49,10 +52,34 @@ async def api(token: str, method: str, path: str, *, params: dict | None = None,
     Returns parsed JSON (or text when raw=True). Raises GiteaError with
     Gitea's own status code and message on failure.
     """
+    return await _request(f"Bearer {token}", method, path,
+                          params=params, json=json, raw=raw)
+
+
+async def bot_api(method: str, path: str, *, params: dict | None = None,
+                  json: dict | None = None, raw: bool = False):
+    """Call the Gitea API as the service account.
+
+    Callers MUST have already authorized the action themselves — this
+    credential has write access to the whole repo, so it is the app's own
+    checks, not Gitea's, that bound what it may do. See ownership.py.
+
+    Gitea personal access tokens use the `token` scheme, not `Bearer`.
+    """
+    if not settings.owner_merge_enabled:
+        raise GiteaError(status_code=503,
+                         detail="Publishing as owner is not configured on this server.")
+    return await _request(f"token {settings.bot_token}", method, path,
+                          params=params, json=json, raw=raw)
+
+
+async def _request(authorization: str, method: str, path: str, *,
+                   params: dict | None = None, json: dict | None = None,
+                   raw: bool = False):
     resp = await get_client().request(
         method, f"/api/v1{path}",
         params=params, json=json,
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": authorization},
     )
     if resp.status_code >= 400:
         raise GiteaError(status_code=resp.status_code, detail=_error_detail(resp))

@@ -44,6 +44,10 @@ export default function Suggestions() {
             key={pr.id}
             pr={pr}
             canApprove={canApprove && pr.state === 'open'}
+            // A member may publish a change to a prompt they own, with no
+            // approver. The backend authorizes this; the flag only chooses
+            // which button and helper text to show.
+            canPublishAsOwner={!canApprove && pr.state === 'open' && !!pr.owner_mergeable}
             isOwn={pr.author === user.username}
             onMerged={() => setRefresh((n) => n + 1)}
           />
@@ -53,7 +57,7 @@ export default function Suggestions() {
   )
 }
 
-function SuggestionItem({ pr, canApprove, isOwn, onMerged }) {
+function SuggestionItem({ pr, canApprove, canPublishAsOwner, isOwn, onMerged }) {
   const [open, setOpen] = useState(false)
   const [diff, setDiff] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -107,15 +111,21 @@ function SuggestionItem({ pr, canApprove, isOwn, onMerged }) {
           {diff === null ? <div className="muted small">Loading change…</div> : <DiffView diff={diff} />}
           {error && <div className="alert alert-error">{error}</div>}
           {done && <div className="alert alert-success">{done}</div>}
-          {canApprove && !done && (
+          {(canApprove || canPublishAsOwner) && !done && (
             <div className="editor-actions">
               <button className="btn btn-primary" onClick={approve} disabled={busy}>
-                {busy ? 'Publishing…' : 'Approve & publish'}
+                {busy ? 'Publishing…' : canPublishAsOwner ? 'Publish' : 'Approve & publish'}
               </button>
-              {isOwn && (
+              {canPublishAsOwner ? (
                 <span className="muted small">
-                  This is your own suggestion — another approver may need to review it.
+                  You own this prompt — publishing applies your change immediately.
                 </span>
+              ) : (
+                isOwn && (
+                  <span className="muted small">
+                    This is your own suggestion — another approver may need to review it.
+                  </span>
+                )
               )}
             </div>
           )}

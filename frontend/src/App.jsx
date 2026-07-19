@@ -6,6 +6,7 @@ import Activity from './pages/Activity.jsx'
 import Browse from './pages/Browse.jsx'
 import History from './pages/History.jsx'
 import Login from './pages/Login.jsx'
+import NewPrompt from './pages/NewPrompt.jsx'
 import PromptDetail from './pages/PromptDetail.jsx'
 import Suggestions from './pages/Suggestions.jsx'
 
@@ -54,6 +55,7 @@ export default function App() {
         <main className="content">
           <Routes>
             <Route path="/" element={<Browse />} />
+            <Route path="/new" element={<NewPrompt />} />
             <Route path="/prompt/*" element={<PromptDetail />} />
             <Route path="/history/*" element={<History />} />
             <Route path="/suggestions" element={<Suggestions />} />

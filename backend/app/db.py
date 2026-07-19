@@ -9,6 +9,10 @@ the single source of truth):
 - oauth_states:  short-lived CSRF `state` values for in-flight OAuth logins.
 - copy_events:   prompt path + timestamp per copy click. Deliberately nothing
                  else — no user id, no prompt content, no PII (spec §7).
+- owner_merges:  audit trail of publishes that bypassed approver review. This
+                 one DOES record the username: it is a security audit log for
+                 an authorization bypass, not usage analytics, and "who" is the
+                 whole point of keeping it.
 """
 
 import os
@@ -36,6 +40,14 @@ CREATE TABLE IF NOT EXISTS copy_events (
     ts   REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_copy_events_path ON copy_events(path);
+CREATE TABLE IF NOT EXISTS owner_merges (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL,
+    pr_id    INTEGER NOT NULL,
+    paths    TEXT NOT NULL,
+    ts       REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_owner_merges_ts ON owner_merges(ts);
 """
 
 
@@ -114,6 +126,26 @@ def consume_state(state: str) -> bool:
 def log_copy_event(path: str) -> None:
     with connect() as conn:
         conn.execute("INSERT INTO copy_events (path, ts) VALUES (?, ?)", (path, time.time()))
+
+
+def log_owner_merge(username: str, pr_id: int, paths: list[str]) -> None:
+    """Record an approver-free publish. Called only after the merge succeeds."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO owner_merges (username, pr_id, paths, ts) VALUES (?, ?, ?, ?)",
+            (username, pr_id, "\n".join(paths), time.time()),
+        )
+
+
+def recent_owner_merges(limit: int = 50) -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT username, pr_id, paths, ts FROM owner_merges "
+            "ORDER BY ts DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [{"username": r["username"], "pr_id": r["pr_id"],
+             "paths": r["paths"].split("\n"), "ts": r["ts"]} for r in rows]
 
 
 def most_copied(limit: int = 10) -> list[dict]:

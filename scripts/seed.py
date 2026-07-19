@@ -10,6 +10,7 @@ Creates (idempotently):
   - Gitea admin        pl-admin / seed-admin-pass-1   (instance admin)
   - Approver account   adam.approver / Password123!   (write on the repo)
   - User account       uma.user / Password123!        (read on the repo)
+  - Service account    pl-bot / <random>             (write on the repo)
   - Org `bank` with private repo `prompt-library`, seeded from seed/prompt-library/
   - Branch protection on main requiring 1 approval
   - A confidential OAuth2 application, credentials written to .env
@@ -42,6 +43,11 @@ USERS = [
     ("uma.user", "Password123!", "uma@example.local", "Uma User", "read"),
 ]
 
+# Service account that executes owner-merges (docs/phase-2-ownership.md §3).
+# Write access, so it can merge; the app is what decides when it may.
+BOT_USER = "pl-bot"
+BOT_EMAIL = "pl-bot@example.local"
+
 ORG = "bank"
 REPO = "prompt-library"
 SEED_DIR = ROOT / "seed" / "prompt-library"
@@ -57,7 +63,14 @@ def gitea_cli(*args: str, check: bool = True) -> subprocess.CompletedProcess:
 
 
 def api(token: str, method: str, path: str, payload: dict | None = None,
-        ok_statuses: tuple = ()) -> dict | list | None:
+        ok_statuses: tuple = (), ok_message: str = "") -> dict | list | None:
+    """Call the Gitea API. Statuses in `ok_statuses` return None instead of
+    raising — that is how "already exists" is treated as success.
+
+    `ok_message` narrows a tolerated status to responses whose body contains
+    that substring, so a status Gitea overloads (403 means both "already
+    exists" and "you may not do this") doesn't swallow the real failure.
+    """
     req = urllib.request.Request(
         f"{GITEA_URL}/api/v1{path}",
         method=method,
@@ -69,9 +82,9 @@ def api(token: str, method: str, path: str, payload: dict | None = None,
             body = resp.read()
             return json.loads(body) if body else None
     except urllib.error.HTTPError as err:
-        if err.code in ok_statuses:
-            return None
         detail = err.read().decode()[:300]
+        if err.code in ok_statuses and (not ok_message or ok_message in detail):
+            return None
         raise RuntimeError(f"{method} {path} -> HTTP {err.code}: {detail}") from err
 
 
@@ -154,10 +167,46 @@ def ensure_branch_protection(token: str) -> None:
         "block_on_outdated_branch": False,
         "enable_push": True,  # approvers may push; merges still need an approval
     }
+    # Gitea answers "Branch protection already exist" with 403, not 409/422, so
+    # a re-run needs 403 tolerated here or the whole script dies at step 6.
+    # Matched on the message so a genuine permissions 403 still fails loudly.
     result = api(token, "POST", f"/repos/{ORG}/{REPO}/branch_protections",
-                 payload, ok_statuses=(409, 422))
+                 payload, ok_statuses=(403, 409, 422),
+                 ok_message="already exist")
     print(f"  Branch protection on main {'created' if result else 'already present'} "
           "(1 approval required)")
+
+
+def ensure_bot(token: str) -> str | None:
+    """Create the owner-merge service account and mint it an API token.
+
+    Returns the token, or None if one already exists — Gitea shows a token's
+    value only at creation, so a re-run keeps whatever .env already holds
+    rather than silently minting a second, unrecorded credential.
+    """
+    # No login is ever performed as this account — the password exists only
+    # because Gitea requires one at creation. The API token is the credential.
+    ensure_user(BOT_USER, secrets.token_urlsafe(24), BOT_EMAIL, "Prompt Library Bot")
+    api(token, "PUT", f"/repos/{ORG}/{REPO}/collaborators/{BOT_USER}",
+        {"permission": "write"})
+    print(f"  {BOT_USER}: write access")
+
+    # Scoped to repo write only — this account never needs admin or user scopes.
+    # Whether a token already exists is read from the CLI's own error: listing
+    # tokens over the API needs the bot's OWN credentials (an admin token gets
+    # 401 there), and we deliberately don't keep a usable bot password.
+    result = gitea_cli("admin", "user", "generate-access-token",
+                       "--username", BOT_USER, "--scopes", "write:repository",
+                       "--token-name", "owner-merge", "--raw", check=False)
+    output = (result.stdout + result.stderr).strip()
+    if result.returncode != 0:
+        if "already exists" in output:
+            print("  Bot token already exists (value cannot be re-read; "
+                  "keeping current .env)")
+            return None
+        sys.exit(f"Failed to mint bot token: {output}")
+    print("  Bot token minted")
+    return result.stdout.strip().splitlines()[-1]
 
 
 def ensure_oauth_app(token: str) -> tuple[str, str] | None:
@@ -177,10 +226,16 @@ def ensure_oauth_app(token: str) -> tuple[str, str] | None:
     return app["client_id"], app["client_secret"]
 
 
-def write_env(creds: tuple[str, str] | None) -> None:
+def write_env(creds: tuple[str, str] | None, bot_token: str | None) -> None:
     env_path = ROOT / ".env"
     if env_path.exists() and creds is None:
-        print("  .env already exists — leaving it unchanged")
+        # OAuth creds are unchanged, but a freshly minted bot token still has
+        # to be recorded — it is unreadable after this moment.
+        if bot_token:
+            _upsert_env(env_path, {"BOT_USERNAME": BOT_USER, "BOT_TOKEN": bot_token})
+            print("  .env already exists — updated bot credentials only")
+        else:
+            print("  .env already exists — leaving it unchanged")
         return
     if creds is None:
         sys.exit(".env is missing but the OAuth app already exists. Delete the "
@@ -197,12 +252,28 @@ SESSION_SECRET={secrets.token_urlsafe(48)}
 REPO_OWNER={ORG}
 REPO_NAME={REPO}
 COOKIE_SECURE=false
+BOT_USERNAME={BOT_USER}
+BOT_TOKEN={bot_token or ''}
 """)
     print(f"  Wrote {env_path}")
 
 
+def _upsert_env(env_path: Path, values: dict[str, str]) -> None:
+    """Set keys in an existing .env, replacing any current line for each."""
+    lines = env_path.read_text().splitlines()
+    for key, value in values.items():
+        replacement = f"{key}={value}"
+        for i, line in enumerate(lines):
+            if line.startswith(f"{key}="):
+                lines[i] = replacement
+                break
+        else:
+            lines.append(replacement)
+    env_path.write_text("\n".join(lines) + "\n")
+
+
 def main() -> None:
-    print("[1/8] Starting Gitea…")
+    print("[1/9] Starting Gitea…")
     # .env may not exist yet; compose requires it for the backend, so create a
     # placeholder that this script overwrites below.
     env_path = ROOT / ".env"
@@ -212,29 +283,32 @@ def main() -> None:
     subprocess.run(["docker", "compose", "up", "-d", "gitea"], cwd=ROOT, check=True)
     wait_for_gitea()
 
-    print("[2/8] Creating accounts…")
+    print("[2/9] Creating accounts…")
     ensure_user(ADMIN_USER, ADMIN_PASS, ADMIN_EMAIL, "Prompt Library Admin", admin=True)
     for username, password, email, full_name, _perm in USERS:
         ensure_user(username, password, email, full_name)
     token = admin_token()
 
-    print("[3/8] Creating org and repo…")
+    print("[3/9] Creating org and repo…")
     ensure_org_repo(token)
 
-    print("[4/8] Seeding prompt content…")
+    print("[4/9] Seeding prompt content…")
     push_seed_content(token)
 
-    print("[5/8] Granting access…")
+    print("[5/9] Granting access…")
     ensure_collaborators(token)
 
-    print("[6/8] Protecting main…")
+    print("[6/9] Protecting main…")
     ensure_branch_protection(token)
 
-    print("[7/8] Registering OAuth application…")
-    creds = ensure_oauth_app(token)
-    write_env(creds)
+    print("[7/9] Creating owner-merge service account…")
+    bot_token = ensure_bot(token)
 
-    print("[8/8] Building and starting backend + frontend…")
+    print("[8/9] Registering OAuth application…")
+    creds = ensure_oauth_app(token)
+    write_env(creds, bot_token)
+
+    print("[9/9] Building and starting backend + frontend…")
     subprocess.run(["docker", "compose", "up", "-d", "--build", "backend", "frontend"],
                    cwd=ROOT, check=True)
 
@@ -242,8 +316,12 @@ def main() -> None:
 Done. Prompt Library is at {APP_URL}
 
 Test accounts (password for both: Password123!)
-  uma.user       — member: browse, search, copy, suggest edits
-  adam.approver  — approver: all of the above + approve & publish
+  uma.user       — member: browse, search, copy, suggest edits, and publish
+                   changes to prompts they own, with no approver
+  adam.approver  — approver: all of the above + approve & publish anything
+
+Owner-merges run as {BOT_USER} (credential in .env as BOT_TOKEN) and are
+logged to the owner_merges table. Blank BOT_TOKEN disables the feature.
 
 Gitea admin: {ADMIN_USER} / {ADMIN_PASS} at {GITEA_URL}
 """)

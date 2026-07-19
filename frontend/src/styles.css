@@ -119,6 +119,8 @@ a:hover { text-decoration: underline; }
 .badge-draft { background: var(--gray-bg); color: var(--muted); }
 .badge-in-review { background: var(--amber-bg); color: var(--amber); }
 .badge-deprecated { background: var(--red-bg); color: var(--red); }
+/* Ownership: this user may publish changes here without an approver. */
+.badge-owner { background: #e8f0fb; color: var(--accent-dark); }
 
 /* Detail */
 .detail-head { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem; }
@@ -138,6 +140,8 @@ a:hover { text-decoration: underline; }
 .alert-error { background: var(--red-bg); color: var(--red); }
 .alert-success { background: var(--green-bg); color: var(--green); }
 .alert-warn { background: var(--amber-bg); color: var(--amber); }
+.alert-info { background: #e8f0fb; color: var(--accent-dark); }
+.alert-info a { font-weight: 600; }
 
 /* Suggest editor */
 .editor { display: flex; flex-direction: column; gap: 0.5rem; }

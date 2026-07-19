@@ -16,7 +16,16 @@ class Settings:
     repo_name: str
     cookie_secure: bool
     db_path: str
+    # Service account used ONLY to execute owner-merges, after the app's own
+    # ownership check has passed (docs/phase-2-ownership.md §3). Empty disables
+    # the feature entirely — members then fall back to the approver flow.
+    bot_username: str = ""
+    bot_token: str = ""
     session_max_age: int = 12 * 3600  # seconds
+
+    @property
+    def owner_merge_enabled(self) -> bool:
+        return bool(self.bot_username and self.bot_token)
 
     @property
     def redirect_uri(self) -> str:
@@ -47,6 +56,8 @@ def load_settings() -> Settings:
         repo_name=os.environ.get("REPO_NAME", "prompt-library"),
         cookie_secure=os.environ.get("COOKIE_SECURE", "true").lower() == "true",
         db_path=os.environ.get("DB_PATH", "./data/app.db"),
+        bot_username=os.environ.get("BOT_USERNAME", "").strip(),
+        bot_token=os.environ.get("BOT_TOKEN", "").strip(),
     )
 
 
