@@ -3,9 +3,9 @@
 import time
 from dataclasses import dataclass
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 
-from . import db, gitea
+from . import db, gitea, roles
 
 SESSION_COOKIE = "pl_session"
 
@@ -50,3 +50,18 @@ async def current_session(request: Request) -> UserSession:
         )
 
     return UserSession(session_id=session_id, username=row["username"], token=token)
+
+
+async def require_contributor(session: UserSession = Depends(current_session)) -> UserSession:
+    """403 for browsers (PLAN.MD phase B): endpoints that author content —
+    suggest, create — need at least the Contributor role. Reads and copy
+    logging stay open to every signed-in user. Frontend hiding of the same
+    buttons is cosmetic; this is the check that counts."""
+    role = await roles.get_role(session.session_id, session.token)
+    if role == "browser":
+        raise HTTPException(
+            status_code=403,
+            detail="Your account is read-only in the Prompt Library. "
+                   "Ask an admin to add you to the contributors team to "
+                   "suggest edits or create prompts.")
+    return session

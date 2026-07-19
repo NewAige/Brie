@@ -10,7 +10,12 @@ import NewPrompt from './pages/NewPrompt.jsx'
 import PromptDetail from './pages/PromptDetail.jsx'
 import Suggestions from './pages/Suggestions.jsx'
 
-const ROLE_LABELS = { user: 'Member', approver: 'Approver', admin: 'Admin' }
+const ROLE_LABELS = {
+  browser: 'Browser',
+  contributor: 'Contributor',
+  approver: 'Bank Approver',
+  admin: 'Admin',
+}
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -47,7 +52,7 @@ export default function App() {
             </nav>
             <div className="userbox">
               <span className="user-name">{user.full_name}</span>
-              <span className={`role-chip role-${user.role}`}>{ROLE_LABELS[user.role]}</span>
+              <span className={`role-chip role-${user.role}`}>{ROLE_LABELS[user.role] || user.role}</span>
               <button className="btn btn-quiet" onClick={logout}>Sign out</button>
             </div>
           </div>

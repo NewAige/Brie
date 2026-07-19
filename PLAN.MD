@@ -36,7 +36,7 @@ And four roles: **Browser** (read-only, cannot even suggest), **Contributor** (p
 - Seed/template: add `level` + `owner` lines to `seed/prompt-library/_templates/prompt-template.md`; `level: bank` on seed prompts; one seeded community prompt owned by `uma.user` for demo.
 - Tests (`backend/tests/test_ownership.py`, `test_frontmatter.py`): community+owned → allowed; bank+owned → **denied** (new tightening); absent level → bank → denied; community-on-main/bank-on-head → denied; mixed PR → denied; `level_of` junk → bank.
 
-### Phase B — Browser role via `contributors` team
+### Phase B — Browser role via `contributors` team ✅ DONE (2026-07-19, see Handoff notes)
 - New `backend/app/roles.py` — pure `derive_role(perms, team_names)` + async `get_role(session)` (`GET /repos/...` + `GET /user/teams`, org-checked, 60s TTL cache cleared on logout). `backend/app/routers/auth.py:83` `/api/me` delegates to it.
 - `backend/app/deps.py` — `require_contributor` dependency (403 for browsers); applied to `suggest_edit` and `create_prompt` in `backend/app/routers/prompts.py`. GETs and `/events/copy` stay open.
 - `frontend/src/App.jsx` — labels `Browser / Contributor / Bank Approver / Admin`; hide New-prompt / Suggest / Make-a-copy buttons for browsers (cosmetic; server re-checks).
@@ -92,6 +92,26 @@ And four roles: **Browser** (read-only, cannot even suggest), **Contributor** (p
 2. **Dev-stack re-seed caveat:** `scripts/seed.py::push_seed_content` treats 409 as "already present" and never updates existing files. An **existing** dev Gitea will therefore keep seed prompts *without* `level` lines (they'll correctly render as Bank via fail-closed default, so this is cosmetic-only), and will *gain* the new community demo prompt. For a clean demo of the community flow, wipe the Gitea volume and re-seed, or manually commit the `level:` lines to the dev repo.
 3. **End-to-end check not run** (no dev Gitea up in this session): item 5 of the Verification section — the forged-level PR — exercises the new `raw/{path}?ref=<head sha>` fetch against a real Gitea and is the one integration path unit tests can't cover. Do this when the stack is next up.
 4. **Phase B is next** (Browser role via `contributors` team). Nothing in Phase A blocks it. Note for Phase B's seed work: `scripts/seed.py` currently gives `uma.user` plain read — Phase B moves contributor-ness to the org team, and adds `ben.browser`.
+
+### Phase B — implemented 2026-07-19 (this working tree, uncommitted)
+
+**What landed** (all bullets from the Phase B plan):
+
+- `backend/app/roles.py` — pure `derive_role(perms, teams)` (admin → approver → contributor → browser; team matched case-insensitively on name `contributors` **and** org == `settings.repo_owner`, so a same-named team elsewhere grants nothing) + async `get_role(session_id, token)` with 60s per-session TTL cache and `forget(session_id)`. Gitea error ⇒ browser (fail closed). `GET /user/teams` is paginated (up to 10×50) and skipped entirely when repo perms already decide (admin/push). Split mirrors ownership.py's pure-predicate / fetcher pattern.
+- `backend/app/deps.py` — `require_contributor` dependency (resolves `current_session`, 403 with a friendly "ask an admin to add you to the contributors team" detail for browsers, returns the session). Applied to `suggest_edit` and `create_prompt` in `prompts.py` by swapping their `Depends(current_session)`; all GETs and `/events/copy` untouched.
+- `backend/app/routers/auth.py` — `/api/me` delegates to `roles.get_role`; `logout` also calls `roles.forget`. (Behavior note: a user with no repo access at all used to get Gitea's error from `/api/me`; they now sign in as `browser` and simply can't read anything.)
+- Frontend — `App.jsx` labels `Browser / Contributor / Bank Approver / Admin` (role keys from the backend are now `browser|contributor|approver|admin` — `user` no longer exists); `Browse.jsx` hides New-prompt and `PromptDetail.jsx` hides Suggest-an-edit + Make-a-copy for browsers (Copy and History stay); `styles.css` `.role-user` replaced by `.role-browser` / `.role-contributor`.
+- `scripts/seed.py` — new `ensure_contributors_team` step (find-or-create org team `contributors`, read perm, units code+pulls; attach repo; add `uma.user`); `ben.browser / Password123!` added with plain read; steps renumbered to /10; summary text updated.
+- `docs/deployment.md` §3 — AD mapping now staff → Browser, `contributors` team (sync from e.g. `prompt-contributors` AD group; **team name must be exactly `contributors`**) → Contributor, prompt-approvers → Bank Approver.
+- Tests — new `backend/tests/test_roles.py`: `derive_role` matrix (push beats team, wrong-org/wrong-name team → browser, malformed payloads fail closed, case-insensitive match), `get_role` (caches, `forget` refetches, writers skip the teams call, Gitea error → browser), and TestClient endpoint tests (browser 403 on suggest + create, copy-event stays open, contributor passes the gate). New `backend/tests/conftest.py` sets the dummy env via `setdefault`, so **`python -m pytest tests` now runs with no environment prepared**. `python -m pytest tests -q` → **62 passed**.
+
+**Deviations from the plan wording:** none material. `get_role` takes `(session_id, token)` rather than the whole session object so `roles.py` doesn't import `deps.py` (avoids an import cycle; `deps` imports `roles` for the gate).
+
+**Not yet done / for the next session:**
+
+1. **Not committed** — working tree holds Phase B on top of the committed Phase A.
+2. **Dev-stack verify still pending:** the plan's "OAuth token works against `GET /user/teams` on the deployed Gitea version" check needs the dev stack up. Re-run `scripts/seed.py` (idempotent — it will add the team + `ben.browser` to an existing instance), then sign in as ben.browser (read-only UI, `POST /api/prompts` → 403) and uma.user (Contributor chip, authoring works).
+3. **Phase C is next** (owner approves peer suggestions). Nothing in Phase B blocks it.
 
 ## Verification (end-to-end, dev stack)
 1. Run `scripts/seed.py` against dev Gitea; confirm accounts `ben.browser` / `uma.user` / `adam.approver` and the `contributors` team.

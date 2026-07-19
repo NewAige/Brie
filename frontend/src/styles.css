@@ -55,7 +55,8 @@ a:hover { text-decoration: underline; }
 .user-name { color: var(--muted); }
 
 .role-chip { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; padding: 0.15rem 0.5rem; border-radius: 99px; }
-.role-user { background: var(--gray-bg); color: var(--muted); }
+.role-browser { background: var(--gray-bg); color: var(--muted); }
+.role-contributor { background: #e8f0fb; color: var(--accent-dark); }
 .role-approver { background: var(--green-bg); color: var(--green); }
 .role-admin { background: var(--amber-bg); color: var(--amber); }
 

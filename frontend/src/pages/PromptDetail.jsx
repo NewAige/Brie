@@ -89,12 +89,16 @@ export default function PromptDetail() {
 
       <div className="body-actions">
         <CopyButton text={prompt.body} path={prompt.path} large />
-        <button className="btn" onClick={() => { setEditing(!editing); setSent(null) }}>
-          {editing ? 'Cancel suggestion' : 'Suggest an edit'}
-        </button>
-        <button className="btn" onClick={() => navigate('/new', { state: { from: prompt } })}>
-          Make a copy
-        </button>
+        {user.role !== 'browser' && (
+          <>
+            <button className="btn" onClick={() => { setEditing(!editing); setSent(null) }}>
+              {editing ? 'Cancel suggestion' : 'Suggest an edit'}
+            </button>
+            <button className="btn" onClick={() => navigate('/new', { state: { from: prompt } })}>
+              Make a copy
+            </button>
+          </>
+        )}
         <Link className="btn btn-quiet" to={`/history/${prompt.path}`}>History</Link>
       </div>
 

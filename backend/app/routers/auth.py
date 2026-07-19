@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from .. import db, gitea
+from .. import db, gitea, roles
 from ..config import settings
 from ..deps import SESSION_COOKIE, UserSession, current_session
 
@@ -75,6 +75,7 @@ async def logout(request: Request):
     session_id = request.cookies.get(SESSION_COOKIE)
     if session_id:
         db.delete_session(session_id)
+        roles.forget(session_id)
     response = JSONResponse({"ok": True})
     response.delete_cookie(SESSION_COOKIE, path="/")
     return response
@@ -83,16 +84,9 @@ async def logout(request: Request):
 @router.get("/api/me")
 async def me(session: UserSession = Depends(current_session)):
     user = await gitea.api(session.token, "GET", "/user")
-    # Role comes from the user's REAL permissions on the repo, as reported by
-    # Gitea — never from anything this app stores (spec §6).
-    repo = await gitea.api(session.token, "GET", settings.repo_api)
-    perms = repo.get("permissions") or {}
-    if perms.get("admin"):
-        role = "admin"
-    elif perms.get("push"):
-        role = "approver"
-    else:
-        role = "user"
+    # Role comes from the user's REAL permissions and team memberships in
+    # Gitea — never from anything this app stores (spec §6, PLAN.MD phase B).
+    role = await roles.get_role(session.session_id, session.token)
     return {
         "username": user["login"],
         "full_name": user.get("full_name") or user["login"],

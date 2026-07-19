@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from .. import db, gitea, prompt_index
 from ..config import settings
-from ..deps import UserSession, current_session
+from ..deps import UserSession, current_session, require_contributor
 from ..frontmatter import parse_prompt, render_prompt, replace_body, split_front_matter
 from ..paths import is_prompt_file, slugify
 
@@ -114,7 +114,7 @@ class Suggestion(BaseModel):
 
 @router.post("/prompts/{path:path}/suggest")
 async def suggest_edit(path: str, suggestion: Suggestion,
-                       session: UserSession = Depends(current_session)):
+                       session: UserSession = Depends(require_contributor)):
     """Create branch + commit + PR using the SUGGESTER's own token, so git
     history records them as the author. The UI never shows git terminology.
 
@@ -152,7 +152,7 @@ class NewPrompt(BaseModel):
 
 @router.post("/prompts")
 async def create_prompt(new: NewPrompt,
-                        session: UserSession = Depends(current_session)):
+                        session: UserSession = Depends(require_contributor)):
     """Create a brand-new prompt (from scratch, or "Make a copy" of an
     existing one) as a PR, through the same fork/branch chain as suggestions.
     The path is derived server-side: <category-slug>/<title-slug>.md."""
