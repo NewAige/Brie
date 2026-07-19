@@ -56,6 +56,21 @@ export const api = {
       body: JSON.stringify({ path }),
     }).catch(() => {})
   },
+  drafts: () => request('/api/drafts'),
+  createDraft: (payload) =>
+    request('/api/drafts', { method: 'POST', body: JSON.stringify(payload) }),
+  updateDraft: (path, body) =>
+    request(`/api/drafts/${encodePath(path)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ body }),
+    }),
+  deleteDraft: (path) =>
+    request(`/api/drafts/${encodePath(path)}`, { method: 'DELETE' }),
+  publishDraft: (path, level) =>
+    request(`/api/drafts/${encodePath(path)}/publish`, {
+      method: 'POST',
+      body: JSON.stringify({ level }),
+    }),
   pulls: (state = 'open') => request(`/api/pulls?state=${state}`),
   pullDiff: (id) => request(`/api/pulls/${id}/diff`),
   // Publishes as approver or as prompt owner — the backend decides which,

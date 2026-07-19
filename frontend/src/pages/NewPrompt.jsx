@@ -41,20 +41,34 @@ export default function NewPrompt() {
 
   const ready = title.trim().length >= 3 && effectiveCategory.trim() && body.trim()
 
+  const payload = () => ({
+    title: title.trim(),
+    category: effectiveCategory.trim(),
+    body,
+    tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+    intended_use: intendedUse.trim(),
+    target_model: targetModel.trim(),
+    copied_from: source ? source.path : '',
+  })
+
   const submit = async () => {
     setBusy(true)
     setError(null)
     try {
-      const res = await api.createPrompt({
-        title: title.trim(),
-        category: effectiveCategory.trim(),
-        body,
-        tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
-        intended_use: intendedUse.trim(),
-        target_model: targetModel.trim(),
-        copied_from: source ? source.path : '',
-      })
-      setSent(res.message)
+      const res = await api.createPrompt(payload())
+      setSent({ message: res.message, draft: false })
+    } catch (err) {
+      setError(err.message)
+      setBusy(false)
+    }
+  }
+
+  const saveDraft = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await api.createDraft(payload())
+      setSent({ message: res.message, draft: true })
     } catch (err) {
       setError(err.message)
       setBusy(false)
@@ -64,10 +78,19 @@ export default function NewPrompt() {
   if (sent) {
     return (
       <div className="detail">
-        <div className="alert alert-success">{sent}</div>
+        <div className="alert alert-success">{sent.message}</div>
         <p className="muted">
-          It will appear in the library once an approver reviews it. You can track
-          it under <Link to="/suggestions">Suggestions</Link>.
+          {sent.draft ? (
+            <>
+              It&apos;s private to you until you publish it — find it under{' '}
+              <Link to="/drafts">My drafts</Link>.
+            </>
+          ) : (
+            <>
+              It will appear in the library once an approver reviews it. You can track
+              it under <Link to="/suggestions">Suggestions</Link>.
+            </>
+          )}
         </p>
       </div>
     )
@@ -170,8 +193,12 @@ export default function NewPrompt() {
           <button className="btn btn-primary" onClick={submit} disabled={busy || !ready}>
             {busy ? 'Sending…' : 'Send for review'}
           </button>
+          <button className="btn" onClick={saveDraft} disabled={busy || !ready}>
+            Save as personal draft
+          </button>
           <span className="muted small">
-            New prompts go to the approvers — yours appears in the library once approved.
+            Sending goes to the approvers; a personal draft saves instantly and
+            stays private to you until you publish it.
           </span>
         </div>
       </div>

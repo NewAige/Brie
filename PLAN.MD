@@ -51,7 +51,7 @@ And four roles: **Browser** (read-only, cannot even suggest), **Contributor** (p
 - `frontend/src/pages/Suggestions.jsx` — "Needs your review" filter + peer-approval button copy.
 - Tests: peer author + owner merger + community → allowed; peer + bank → denied; merger not owner → denied.
 
-### Phase D — Personal drafts (largest)
+### Phase D — Personal drafts (largest) ✅ DONE (2026-07-19, see Handoff notes)
 - Extract fork helpers (`_ensure_fork`, `_sync_fork`, commit helpers) from `backend/app/routers/prompts.py` into shared `backend/app/forks.py`.
 - New `backend/app/routers/drafts.py` (prefix `/api/drafts`, all `require_contributor`): ensure fork + `drafts` branch; `GET /api/drafts` (recursive tree of drafts branch, `parse_prompt` each, annotate `on_main` / `pending_pr`); `POST` create (reuse `NewPrompt` model + `slugify` path derivation); `GET/PUT/DELETE /{path}`; `POST /{path}/publish {level}` → 409 checks then existing `_propose_change`.
 - Frontend: `Drafts.jsx` page + "My drafts" nav (hidden for browsers); `NewPrompt.jsx` gains "Save as personal draft"; publish dialog with level choice.
@@ -130,6 +130,26 @@ And four roles: **Browser** (read-only, cannot even suggest), **Contributor** (p
 1. **Not committed** — working tree holds Phases A+B+C.
 2. **Dev-stack verify pending:** end-to-end Verification item 4 (peer flow: adam suggests → uma sees "Needs your review" → publishes → audit row `kind=peer`) needs the dev Gitea up.
 3. **Phase D is next** (personal drafts — the largest). Nothing in Phase C blocks it.
+
+### Phase D — implemented 2026-07-19 (this working tree, uncommitted)
+
+**What landed** (all bullets from the Phase D plan):
+
+- `backend/app/forks.py` — new shared module; `_ensure_fork` / `_sync_fork` / `_commit_to_new_branch` / `_propose_change` / `_branch_name` / `_file_exists` / `_pending_pr_for` moved out of `routers/prompts.py` (public names, same bodies). Additions: `find_fork` (read-only — never creates or syncs, for GET endpoints), `commit_to_branch` (create-or-update on an EXISTING branch, for draft saves), `delete_file`, `open_pr_paths` (set of paths across open PRs; `pending_pr_for` now derives from it), and a clear 409 message in `ensure_fork` when the user owns an unrelated repo with the library's name (fork-name collision). `sync_fork`'s docstring now states it must never touch `drafts`. `propose_change` takes `(token, username, …)` instead of the session object so `forks.py` doesn't import `deps.py`.
+- `backend/app/routers/drafts.py` — prefix `/api/drafts`, every endpoint `Depends(require_contributor)`. `GET ""` lists drafts; `POST ""` (reuses `NewPrompt` + the exact `slugify` path derivation from create_prompt) lazily creates fork + `drafts` branch, 409 if a draft already holds the path, renders front-matter **without** `level` (chosen at publish); `GET/PUT/DELETE /{path}` (PUT is body-only via `replace_body`, front-matter preserved); `POST /{path}/publish {level: Literal["bank","community"]}` → 409 if path on library main / already in an open PR, re-renders front-matter with the chosen level + `author`/`owner` = publisher, then `forks.propose_change` on a fresh `publish/…` branch off the synced fork main.
+- **Draft-listing design point** (the plan didn't specify how to tell drafts apart): the `drafts` branch is created off fork main, so its tree contains every library file. Listing = paths touched by commits unique to the branch (`GET …/compare/main...drafts`, merge-base semantics, union of each commit's `files`) ∩ current branch tree (so deleted drafts drop out) ∩ `is_prompt_file`. Annotated `on_main` via `prompt_index.get_index` paths and `pending_pr` via `forks.open_pr_paths`. GET endpoints use `find_fork` and return `[]`/404 when fork or branch don't exist — reads never mutate.
+- `backend/app/main.py` — drafts router included.
+- Frontend — new `frontend/src/pages/Drafts.jsx` ("My drafts": expandable rows, body editor with Save, Delete with confirm, Publish flow with community/bank radio + plain-language consequence of each; "in review" / "already in library" chips from the backend annotations); `App.jsx` nav link + `/drafts` route (nav hidden for browsers — server still enforces); `NewPrompt.jsx` gains "Save as personal draft" beside "Send for review" (same payload, different success copy linking to My drafts); `api.js` gains the six draft calls.
+- Docs — `docs/phase-2-ownership.md` appendix rewritten from "phase 3 sketch" to "implemented", including the honest limit: forks are private from peers, **not** from Gitea instance admins ("private to you and the platform administrators").
+- Tests — new `backend/tests/test_drafts.py` with an in-memory `FakeGitea` (forks/branches/contents/raw/compare/trees/pulls) driving the real router + forks plumbing: browser 403 on all six endpoints, path-rule reuse (single-segment, `_templates/`, `readme.md` → 404; reserved title → 400 — note `slugify` strips `_`, so the reserved-name guard in practice fires on `readme`), create commits to `drafts` branch with `status: draft` and **no** `level:` line, 409 on duplicate draft, read/update/delete round-trip, publish renders `level: community` and `level: bank` respectively into the committed file (junk level → 422), publish 409s (on-main, pending PR), listing distinguishes drafts from inherited files and annotates `on_main`/`pending_pr`, and listing never writes. **`python -m pytest tests -q` → 91 passed**; `npm run build` clean.
+
+**Deviations from the plan wording:** none material. PUT updates the body only (mirrors suggest-an-edit) rather than arbitrary metadata; publishing does not delete the draft (it drops out of the list naturally once merged + fork synced, and stays visible as "in review" meanwhile).
+
+**Not yet done / for the next session:**
+
+1. **Not committed** — working tree holds Phases A+B+C+D.
+2. **Dev-stack verify pending** (needs the stack up): fork of the private repo is created private; fork-name 409 shows the friendly message; `sync_fork` leaves `drafts` alone; approvers can fork; **and the `compare/main...drafts` response includes per-commit `files` on the deployed Gitea version** — the draft listing depends on it (built against Gitea 1.24; if absent, listing shows empty, nothing is lost).
+3. **Phase E is next** (minimal Admin page). Nothing in Phase D blocks it.
 
 ## Verification (end-to-end, dev stack)
 1. Run `scripts/seed.py` against dev Gitea; confirm accounts `ben.browser` / `uma.user` / `adam.approver` and the `contributors` team.

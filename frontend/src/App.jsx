@@ -4,6 +4,7 @@ import { api } from './api.js'
 import { UserContext } from './hooks.js'
 import Activity from './pages/Activity.jsx'
 import Browse from './pages/Browse.jsx'
+import Drafts from './pages/Drafts.jsx'
 import History from './pages/History.jsx'
 import Login from './pages/Login.jsx'
 import NewPrompt from './pages/NewPrompt.jsx'
@@ -47,6 +48,7 @@ export default function App() {
             </NavLink>
             <nav className="nav">
               <NavLink to="/" end>Library</NavLink>
+              {user.role !== 'browser' && <NavLink to="/drafts">My drafts</NavLink>}
               <NavLink to="/suggestions">Suggestions</NavLink>
               <NavLink to="/activity">Activity</NavLink>
             </nav>
@@ -61,6 +63,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Browse />} />
             <Route path="/new" element={<NewPrompt />} />
+            <Route path="/drafts" element={<Drafts />} />
             <Route path="/prompt/*" element={<PromptDetail />} />
             <Route path="/history/*" element={<History />} />
             <Route path="/suggestions" element={<Suggestions />} />
