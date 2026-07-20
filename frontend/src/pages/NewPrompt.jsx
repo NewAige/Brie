@@ -3,17 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useAsyncData } from '../hooks.js'
 import { api } from '../api.js'
 import Icon from '../components/Icon.jsx'
-
-// Mirrors the server's slugify closely enough for a live path preview.
-// The server's derivation is authoritative.
-function slugify(text) {
-  return text
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
+import { slugify } from '../utils.js'
 
 const NEW_CATEGORY = '__new__'
 

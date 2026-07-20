@@ -237,6 +237,71 @@ def test_read_update_delete_draft(fake, make_client):
         assert client.get(f"/api/drafts/{DRAFT_PATH}").status_code == 404
 
 
+def test_update_draft_metadata_in_place(fake, make_client):
+    """Metadata that doesn't change title/category rewrites the front-matter
+    without moving the file."""
+    fake.draft_files[DRAFT_PATH] = DRAFT_CONTENT
+    with make_client() as client:
+        resp = client.put(f"/api/drafts/{DRAFT_PATH}", json={
+            "body": "Write a calm escalation email.",
+            "tags": ["Email Tone", "escalation"],
+            "target_model": "claude-opus-4-8",
+            "intended_use": "Defuse an angry thread.",
+        })
+        assert resp.status_code == 200
+        assert resp.json()["path"] == DRAFT_PATH
+
+    content = fake.draft_files[DRAFT_PATH]
+    assert "tags: [email-tone, escalation]" in content   # slugified + deduped
+    assert "target_model: claude-opus-4-8" in content
+    assert "intended_use: Defuse an angry thread." in content
+    assert "status: draft" in content
+
+
+def test_update_draft_rename_moves_file(fake, make_client):
+    fake.draft_files[DRAFT_PATH] = DRAFT_CONTENT
+    with make_client() as client:
+        resp = client.put(f"/api/drafts/{DRAFT_PATH}", json={
+            "body": "Write a calm escalation email.",
+            "title": "Refund Apology",
+            "category": "Billing Support",
+        })
+        assert resp.status_code == 200
+        new_path = "billing-support/refund-apology.md"
+        assert resp.json()["path"] == new_path
+
+    assert DRAFT_PATH not in fake.draft_files          # old file removed
+    assert "title: Refund Apology" in fake.draft_files[new_path]
+    assert "category: billing-support" in fake.draft_files[new_path]
+
+
+def test_update_draft_rename_conflicts(fake, make_client):
+    """A rename onto an existing draft, or onto a library prompt, is refused
+    and leaves both files untouched."""
+    fake.draft_files[DRAFT_PATH] = DRAFT_CONTENT
+    fake.draft_files["billing/refund-apology.md"] = DRAFT_CONTENT
+    fake.library_main_files["writing/weekly-recap.md"] = DRAFT_CONTENT
+    with make_client() as client:
+        clash = client.put(f"/api/drafts/{DRAFT_PATH}", json={
+            "body": "b", "title": "Refund Apology", "category": "billing"})
+        assert clash.status_code == 409
+
+        on_main = client.put(f"/api/drafts/{DRAFT_PATH}", json={
+            "body": "b", "title": "Weekly Recap", "category": "writing"})
+        assert on_main.status_code == 409
+
+    assert fake.draft_files[DRAFT_PATH] == DRAFT_CONTENT
+
+
+def test_update_draft_rejects_empty_slug(fake, make_client):
+    fake.draft_files[DRAFT_PATH] = DRAFT_CONTENT
+    with make_client() as client:
+        resp = client.put(f"/api/drafts/{DRAFT_PATH}",
+                          json={"body": "b", "title": "!!!"})
+        assert resp.status_code == 400
+    assert fake.draft_files[DRAFT_PATH] == DRAFT_CONTENT
+
+
 # --- history ----------------------------------------------------------------
 
 def _removed_lines(diff: str) -> list[str]:
