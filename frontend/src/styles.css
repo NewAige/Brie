@@ -55,7 +55,8 @@ a:hover { text-decoration: underline; }
 .user-name { color: var(--muted); }
 
 .role-chip { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; padding: 0.15rem 0.5rem; border-radius: 99px; }
-.role-user { background: var(--gray-bg); color: var(--muted); }
+.role-browser { background: var(--gray-bg); color: var(--muted); }
+.role-contributor { background: #e8f0fb; color: var(--accent-dark); }
 .role-approver { background: var(--green-bg); color: var(--green); }
 .role-admin { background: var(--amber-bg); color: var(--amber); }
 
@@ -121,6 +122,8 @@ a:hover { text-decoration: underline; }
 .badge-deprecated { background: var(--red-bg); color: var(--red); }
 /* Ownership: this user may publish changes here without an approver. */
 .badge-owner { background: #e8f0fb; color: var(--accent-dark); }
+.badge-bank { background: #e8f0fb; color: var(--accent-dark); }
+.badge-community { background: #f1eafb; color: #6d3fa8; }
 
 /* Detail */
 .detail-head { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem; }
@@ -179,5 +182,11 @@ a:hover { text-decoration: underline; }
 .ranked { counter-reset: rank; }
 .ranked li { counter-increment: rank; position: relative; padding-left: 1.6rem; }
 .ranked li::before { content: counter(rank); position: absolute; left: 0; top: 0.1rem; font-weight: 700; color: var(--muted); font-size: 0.85rem; }
+
+/* Admin users */
+.admin-users { gap: 0; }
+.admin-user-row { flex-direction: row; align-items: center; gap: 0.7rem; padding: 0.55rem 0; border-bottom: 1px solid var(--border); }
+.admin-users .admin-user-row:last-child { border-bottom: none; }
+.admin-user-name { flex: 1; font-weight: 550; }
 
 .tabs { display: flex; gap: 0.4rem; }

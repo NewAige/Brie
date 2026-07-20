@@ -9,9 +9,11 @@ the backend and frontend:
 Creates (idempotently):
   - Gitea admin        pl-admin / seed-admin-pass-1   (instance admin)
   - Approver account   adam.approver / Password123!   (write on the repo)
-  - User account       uma.user / Password123!        (read on the repo)
+  - Contributor        uma.user / Password123!        (read + `contributors` team)
+  - Browser account    ben.browser / Password123!     (read on the repo only)
   - Service account    pl-bot / <random>             (write on the repo)
   - Org `bank` with private repo `prompt-library`, seeded from seed/prompt-library/
+  - Org team `contributors` (read on the repo) — membership = app role Contributor
   - Branch protection on main requiring 1 approval
   - A confidential OAuth2 application, credentials written to .env
 
@@ -41,7 +43,13 @@ USERS = [
     # (username, password, email, full name, repo permission)
     ("adam.approver", "Password123!", "adam@example.local", "Adam Approver", "write"),
     ("uma.user", "Password123!", "uma@example.local", "Uma User", "read"),
+    ("ben.browser", "Password123!", "ben@example.local", "Ben Browser", "read"),
 ]
+
+# Read + membership in this org team = app role Contributor; read without it =
+# Browser (PLAN.MD phase B). In production the team is filled by LDAP group sync.
+CONTRIBUTORS_TEAM = "contributors"
+CONTRIBUTOR_MEMBERS = ["uma.user"]
 
 # Service account that executes owner-merges (docs/phase-2-ownership.md §3).
 # Write access, so it can merge; the app is what decides when it may.
@@ -156,6 +164,29 @@ def ensure_collaborators(token: str) -> None:
         api(token, "PUT", f"/repos/{ORG}/{REPO}/collaborators/{username}",
             {"permission": permission})
         print(f"  {username}: {permission} access")
+
+
+def ensure_contributors_team(token: str) -> None:
+    """Org team whose membership makes a read-level user a Contributor in the
+    app (backend/app/roles.py matches on team name + org). Read permission on
+    the repo, so the team itself grants nothing beyond browsing."""
+    teams = api(token, "GET", f"/orgs/{ORG}/teams") or []
+    team = next((t for t in teams if t.get("name") == CONTRIBUTORS_TEAM), None)
+    if team is None:
+        team = api(token, "POST", f"/orgs/{ORG}/teams", {
+            "name": CONTRIBUTORS_TEAM,
+            "description": "May suggest edits and create prompts in the Prompt Library",
+            "permission": "read",
+            "includes_all_repositories": False,
+            "units": ["repo.code", "repo.pulls"],
+        })
+        print(f"  Team {CONTRIBUTORS_TEAM} created")
+    else:
+        print(f"  Team {CONTRIBUTORS_TEAM} already exists")
+    api(token, "PUT", f"/teams/{team['id']}/repos/{ORG}/{REPO}")
+    for username in CONTRIBUTOR_MEMBERS:
+        api(token, "PUT", f"/teams/{team['id']}/members/{username}")
+        print(f"  {username}: member of {CONTRIBUTORS_TEAM}")
 
 
 def ensure_branch_protection(token: str) -> None:
@@ -273,7 +304,7 @@ def _upsert_env(env_path: Path, values: dict[str, str]) -> None:
 
 
 def main() -> None:
-    print("[1/9] Starting Gitea…")
+    print("[1/10] Starting Gitea…")
     # .env may not exist yet; compose requires it for the backend, so create a
     # placeholder that this script overwrites below.
     env_path = ROOT / ".env"
@@ -283,42 +314,46 @@ def main() -> None:
     subprocess.run(["docker", "compose", "up", "-d", "gitea"], cwd=ROOT, check=True)
     wait_for_gitea()
 
-    print("[2/9] Creating accounts…")
+    print("[2/10] Creating accounts…")
     ensure_user(ADMIN_USER, ADMIN_PASS, ADMIN_EMAIL, "Prompt Library Admin", admin=True)
     for username, password, email, full_name, _perm in USERS:
         ensure_user(username, password, email, full_name)
     token = admin_token()
 
-    print("[3/9] Creating org and repo…")
+    print("[3/10] Creating org and repo…")
     ensure_org_repo(token)
 
-    print("[4/9] Seeding prompt content…")
+    print("[4/10] Seeding prompt content…")
     push_seed_content(token)
 
-    print("[5/9] Granting access…")
+    print("[5/10] Granting access…")
     ensure_collaborators(token)
 
-    print("[6/9] Protecting main…")
+    print("[6/10] Creating contributors team…")
+    ensure_contributors_team(token)
+
+    print("[7/10] Protecting main…")
     ensure_branch_protection(token)
 
-    print("[7/9] Creating owner-merge service account…")
+    print("[8/10] Creating owner-merge service account…")
     bot_token = ensure_bot(token)
 
-    print("[8/9] Registering OAuth application…")
+    print("[9/10] Registering OAuth application…")
     creds = ensure_oauth_app(token)
     write_env(creds, bot_token)
 
-    print("[9/9] Building and starting backend + frontend…")
+    print("[10/10] Building and starting backend + frontend…")
     subprocess.run(["docker", "compose", "up", "-d", "--build", "backend", "frontend"],
                    cwd=ROOT, check=True)
 
     print(f"""
 Done. Prompt Library is at {APP_URL}
 
-Test accounts (password for both: Password123!)
-  uma.user       — member: browse, search, copy, suggest edits, and publish
-                   changes to prompts they own, with no approver
-  adam.approver  — approver: all of the above + approve & publish anything
+Test accounts (password for all: Password123!)
+  ben.browser    — browser: browse, search, copy — read-only, cannot suggest
+  uma.user       — contributor: all of the above + suggest edits, create
+                   prompts, and publish changes to community prompts they own
+  adam.approver  — bank approver: all of the above + approve & publish anything
 
 Owner-merges run as {BOT_USER} (credential in .env as BOT_TOKEN) and are
 logged to the owner_merges table. Blank BOT_TOKEN disables the feature.

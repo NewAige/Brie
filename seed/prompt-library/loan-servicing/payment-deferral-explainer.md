@@ -3,6 +3,7 @@ title: Payment Deferral Explainer
 category: loan-servicing
 tags: [loans, customer-facing, deferral]
 status: approved
+level: bank
 author: jsmith
 target_model: internal-chatbot-v1
 intended_use: Explain deferral options in plain language to a customer

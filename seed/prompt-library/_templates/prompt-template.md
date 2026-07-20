@@ -3,7 +3,9 @@ title: Short Display Name Here
 category: must-match-folder-name
 tags: [tag-one, tag-two]
 status: draft        # draft | in-review | approved | deprecated
+level: bank          # bank | community — anything else is treated as bank
 author: your-username
+owner: your-username # community only: who may publish edits without an approver
 target_model: internal-chatbot-v1
 intended_use: One sentence saying when a member of staff should reach for this prompt
 review_notes: Leave empty until compliance review; then record date and outcome

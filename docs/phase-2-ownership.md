@@ -170,25 +170,30 @@ not the same claim as who may publish without review.
 
 - Team ownership (field is forward-compatible; see above)
 - Ownership transfer UI
-- Private prompts — see below
+- Private prompts — implemented in phase 3 as personal drafts; see below
 
 ---
 
-## Appendix: private prompts (phase 3 sketch)
+## Appendix: personal drafts (implemented in phase 3, PLAN.MD phase D)
 
-Asked during phase 2 planning; recorded here so phase 2 doesn't foreclose it.
-**Nothing in the app is private today** — one repo, every signed-in user reads
-all of it, and `status: draft` hides nothing (Browse filters only `deprecated`).
+The phase-3 sketch that used to live here weighed three options; **Option A —
+drafts in the user's fork** — was chosen and is now built:
 
-Three options, in increasing cost:
+- A draft lives on a long-lived `drafts` branch in the author's own Gitea
+  fork of the library, at its real future `<category>/<slug>.md` path.
+- Saving is a direct commit to that branch — instant, no review. "Publish"
+  exports the single file through the normal propose-a-PR flow (fresh branch
+  off the synced fork main), with the governance level (`bank`/`community`)
+  chosen at publish time and reviewed by an approver like any new prompt.
+- Privacy is enforced by Gitea repository permissions, never by app-side
+  filtering: peers cannot see the fork at all.
 
-| | Mechanism | Verdict |
-|---|---|---|
-| **A. Personal drafts in the user's fork** | Prompt lives in the author's existing Gitea fork; visible only to them until they choose "Publish", which opens the PR | **Recommended.** Honest privacy — enforced by Gitea permissions, not UI. Needs the index to read the user's fork alongside `main`. |
-| **B. `visibility: private` field** | One repo, a field hides it from other users in the app | **Not real privacy.** Anyone with Gitea access can clone the repo and read it. Acceptable only as noise reduction, and must not be labelled "private". |
-| **C. Team-scoped repos** | Separate repo per team with real permissions | Correct for genuinely confidential content, but multi-repo touches indexing, search, categories, and every write path. |
+**Honest limit:** a fork of a private repo is private *from other users*, not
+from **Gitea instance administrators** — anyone with site-admin rights on the
+Gitea box can read every repository, drafts included. Do not describe drafts
+to users as unreadable by IT; describe them as "private to you and the
+platform administrators", the same promise as a corporate home drive.
 
-Option A composes naturally with phase 2: a fork is already per-user, phase 1
-already commits there for read-only members, and "publish my draft" is the
-existing PR flow with the owner-merge rule applied. If private prompts are
-wanted, do A after phase 2 rather than folding it in.
+Options B (`visibility:` field — not real privacy) and C (team-scoped repos —
+correct for confidential team content, but multiplies every code path) remain
+rejected/deferred as recorded during phase-2 planning.

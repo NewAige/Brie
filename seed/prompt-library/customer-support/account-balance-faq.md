@@ -3,6 +3,7 @@ title: Account Balance FAQ Answers
 category: customer-support
 tags: [support, customer-facing, faq]
 status: approved
+level: bank
 author: jsmith
 target_model: internal-chatbot-v1
 intended_use: Answer common questions about balances, holds and pending transactions

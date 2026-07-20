@@ -3,14 +3,21 @@ import { NavLink, Route, Routes } from 'react-router-dom'
 import { api } from './api.js'
 import { UserContext } from './hooks.js'
 import Activity from './pages/Activity.jsx'
+import AdminUsers from './pages/AdminUsers.jsx'
 import Browse from './pages/Browse.jsx'
+import Drafts from './pages/Drafts.jsx'
 import History from './pages/History.jsx'
 import Login from './pages/Login.jsx'
 import NewPrompt from './pages/NewPrompt.jsx'
 import PromptDetail from './pages/PromptDetail.jsx'
 import Suggestions from './pages/Suggestions.jsx'
 
-const ROLE_LABELS = { user: 'Member', approver: 'Approver', admin: 'Admin' }
+const ROLE_LABELS = {
+  browser: 'Browser',
+  contributor: 'Contributor',
+  approver: 'Bank Approver',
+  admin: 'Admin',
+}
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -42,12 +49,14 @@ export default function App() {
             </NavLink>
             <nav className="nav">
               <NavLink to="/" end>Library</NavLink>
+              {user.role !== 'browser' && <NavLink to="/drafts">My drafts</NavLink>}
               <NavLink to="/suggestions">Suggestions</NavLink>
               <NavLink to="/activity">Activity</NavLink>
+              {user.role === 'admin' && <NavLink to="/admin">Users</NavLink>}
             </nav>
             <div className="userbox">
               <span className="user-name">{user.full_name}</span>
-              <span className={`role-chip role-${user.role}`}>{ROLE_LABELS[user.role]}</span>
+              <span className={`role-chip role-${user.role}`}>{ROLE_LABELS[user.role] || user.role}</span>
               <button className="btn btn-quiet" onClick={logout}>Sign out</button>
             </div>
           </div>
@@ -56,10 +65,12 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Browse />} />
             <Route path="/new" element={<NewPrompt />} />
+            <Route path="/drafts" element={<Drafts />} />
             <Route path="/prompt/*" element={<PromptDetail />} />
             <Route path="/history/*" element={<History />} />
             <Route path="/suggestions" element={<Suggestions />} />
             <Route path="/activity" element={<Activity />} />
+            <Route path="/admin" element={<AdminUsers />} />
             <Route path="*" element={<div className="empty">Page not found.</div>} />
           </Routes>
         </main>

@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useAsyncData } from '../hooks.js'
+import { useAsyncData, useUser } from '../hooks.js'
 import { api } from '../api.js'
 import PromptCard from '../components/PromptCard.jsx'
 
 export default function Browse() {
+  const user = useUser()
   const [category, setCategory] = useState('')
   const [tag, setTag] = useState('')
   const [query, setQuery] = useState('')
@@ -39,7 +40,9 @@ export default function Browse() {
           onChange={(e) => setQuery(e.target.value)}
           autoFocus
         />
-        <Link className="btn btn-primary" to="/new">New prompt</Link>
+        {user.role !== 'browser' && (
+          <Link className="btn btn-primary" to="/new">New prompt</Link>
+        )}
       </div>
 
       <div className="filter-row">

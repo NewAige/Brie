@@ -3,6 +3,7 @@ title: Delinquency Outreach Letter
 category: loan-servicing
 tags: [loans, collections, letters]
 status: approved
+level: bank
 author: mchen
 target_model: internal-chatbot-v1
 intended_use: Draft a respectful first-contact letter for an account 30 days past due

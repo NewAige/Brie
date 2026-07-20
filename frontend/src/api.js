@@ -56,12 +56,34 @@ export const api = {
       body: JSON.stringify({ path }),
     }).catch(() => {})
   },
+  drafts: () => request('/api/drafts'),
+  createDraft: (payload) =>
+    request('/api/drafts', { method: 'POST', body: JSON.stringify(payload) }),
+  updateDraft: (path, body) =>
+    request(`/api/drafts/${encodePath(path)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ body }),
+    }),
+  deleteDraft: (path) =>
+    request(`/api/drafts/${encodePath(path)}`, { method: 'DELETE' }),
+  draftHistory: (path) => request(`/api/drafts/${encodePath(path)}/history`),
+  publishDraft: (path, level) =>
+    request(`/api/drafts/${encodePath(path)}/publish`, {
+      method: 'POST',
+      body: JSON.stringify({ level }),
+    }),
   pulls: (state = 'open') => request(`/api/pulls?state=${state}`),
   pullDiff: (id) => request(`/api/pulls/${id}/diff`),
   // Publishes as approver or as prompt owner — the backend decides which,
   // and re-checks ownership itself. `pr.owner_mergeable` only picks the label.
   merge: (id) => request(`/api/pulls/${id}/merge`, { method: 'POST' }),
   activity: () => request('/api/activity'),
+  adminUsers: () => request('/api/admin/users'),
+  setContributor: (username, member) =>
+    request(`/api/admin/users/${encodeURIComponent(username)}/contributor`, {
+      method: 'PUT',
+      body: JSON.stringify({ member }),
+    }),
 }
 
 // Encode each path segment but keep the slashes.

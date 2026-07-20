@@ -77,10 +77,20 @@ def test_parse_prompt_fields_and_defaults():
     assert p["category"] == "loan-servicing"
     assert p["status"] == "approved"
     assert p["title"] == "Payment Deferral Explainer"
+    assert p["level"] == "bank"  # no `level` in FULL — fail-closed default
     p2 = parse_prompt("marketing/spring-campaign.md", "No metadata at all.")
     assert p2["title"] == "Spring Campaign"
     assert p2["status"] == "draft"
+    assert p2["level"] == "bank"
     assert p2["body"] == "No metadata at all."
+
+
+def test_parse_prompt_level_community_only_when_exact():
+    community = FULL.replace("status: approved", "status: approved\nlevel: community")
+    assert parse_prompt("x/y.md", community)["level"] == "community"
+    for junk in ("Community", "bank", "personal", "[community]", "''"):
+        raw = FULL.replace("status: approved", f"status: approved\nlevel: {junk}")
+        assert parse_prompt("x/y.md", raw)["level"] == "bank", junk
 
 
 def test_replace_body_preserves_front_matter_verbatim():

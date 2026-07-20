@@ -70,12 +70,32 @@ Gitea → Site Administration → Authentication Sources → Add → LDAP (via B
 Map AD groups → Gitea teams where possible (Gitea's LDAP group sync), so role
 assignment follows existing bank identity management:
 
-- Team `staff` on org `bank`: **read** on `prompt-library` → app role "Member".
-- Team `prompt-approvers`: **write** on `prompt-library` → app role "Approver".
+- Team `staff` on org `bank`: **read** on `prompt-library` → app role
+  "Browser" (browse, search, copy — cannot suggest or create).
+- Team `contributors` on org `bank` (sync from an AD group such as
+  `prompt-contributors`): **read** on `prompt-library` → app role
+  "Contributor" (suggest edits, create prompts, maintain owned community
+  prompts). **The team must be named exactly `contributors`** — the app
+  derives the role by matching that team name on the library repo's org
+  (`backend/app/roles.py`).
+- Team `prompt-approvers`: **write** on `prompt-library` → app role
+  "Bank Approver".
 - Org owners / repo admins → app role "Admin".
 
-Decide which AD groups map to approver vs. user with the business owner
-(spec open question §11).
+Decide which AD groups map to approver vs. contributor vs. browser with the
+business owner (spec open question §11).
+
+**The in-app admin page** (`/admin`, visible to app role "Admin") lists
+everyone with repo access and can add/remove users on the `contributors`
+team. Two caveats:
+
+- Gitea only lets an **org owner** change team membership — a user who is
+  merely a repo admin will get Gitea's 403, which the page shows verbatim.
+  Make the intended app admins owners of the `bank` org.
+- Where the `contributors` team is populated by LDAP group sync (the setup
+  above), the next sync **overwrites** manual changes made on the page. In
+  that configuration treat the page as a read-only roster and manage
+  contributor-ness through the AD group.
 
 ## 4. Register the OAuth application
 

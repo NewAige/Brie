@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from . import db, gitea
-from .routers import activity, auth, prompts, pulls
+from .routers import activity, admin, auth, drafts, prompts, pulls
 
 
 @asynccontextmanager
@@ -24,5 +24,7 @@ async def healthz():
 
 app.include_router(auth.router)
 app.include_router(prompts.router)
+app.include_router(drafts.router)
 app.include_router(pulls.router)
 app.include_router(activity.router)
+app.include_router(admin.router)

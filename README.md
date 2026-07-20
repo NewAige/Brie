@@ -40,11 +40,12 @@ registers the OAuth application, writes `.env`, and starts the app.
 
 Then open **http://localhost:8080** and sign in as:
 
-| Account         | Password       | Role     | Can                                       |
-|-----------------|----------------|----------|-------------------------------------------|
-| `uma.user`      | `Password123!` | Member   | Browse, search, copy, suggest edits       |
-| `adam.approver` | `Password123!` | Approver | All of the above + approve & publish      |
-| `pl-admin`      | `seed-admin-pass-1` | Admin | Everything, incl. Gitea administration |
+| Account         | Password       | Role          | Can                                       |
+|-----------------|----------------|---------------|-------------------------------------------|
+| `ben.browser`   | `Password123!` | Browser       | Browse, search, copy — read-only          |
+| `uma.user`      | `Password123!` | Contributor   | All of the above + suggest edits, create prompts |
+| `adam.approver` | `Password123!` | Bank Approver | All of the above + approve & publish      |
+| `pl-admin`      | `seed-admin-pass-1` | Admin    | Everything, incl. Gitea administration    |
 
 In production there are no local accounts: Gitea authenticates against
 Active Directory via LDAP — see [docs/deployment.md](docs/deployment.md).
@@ -63,9 +64,10 @@ Active Directory via LDAP — see [docs/deployment.md](docs/deployment.md).
 - **Approvers review and merge** from the Suggestions page. Whether someone
   may merge is decided by Gitea (branch protection on `main` + team/collaborator
   permissions), never by this app's code.
-- **Roles are resolved from Gitea**: repo admin → Admin, write → Approver,
-  read → Member. OAuth scopes do not grant permissions — Gitea checks the
-  user's real rights on every call.
+- **Roles are resolved from Gitea**: repo admin → Admin, write → Bank
+  Approver, read + membership in the org's `contributors` team → Contributor,
+  plain read → Browser (read-only). OAuth scopes do not grant permissions —
+  Gitea checks the user's real rights on every call.
 - **Activity** comes from Gitea (recent merges, open suggestions), except
   "most copied", which is logged locally as `prompt path + timestamp` and
   nothing else — no user id, no content, no PII.
