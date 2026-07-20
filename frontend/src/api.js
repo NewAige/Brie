@@ -66,6 +66,7 @@ export const api = {
     }),
   deleteDraft: (path) =>
     request(`/api/drafts/${encodePath(path)}`, { method: 'DELETE' }),
+  draftHistory: (path) => request(`/api/drafts/${encodePath(path)}/history`),
   publishDraft: (path, level) =>
     request(`/api/drafts/${encodePath(path)}/publish`, {
       method: 'POST',

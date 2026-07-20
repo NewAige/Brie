@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAsyncData } from '../hooks.js'
 import { api } from '../api.js'
+import CommitHistory from '../components/CommitHistory.jsx'
 
 // Personal drafts (phase D): stored in the user's own Gitea fork, visible
 // only to them until they publish. Everything here talks to /api/drafts —
@@ -49,6 +50,9 @@ function DraftItem({ draft, onChanged }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
+  const [history, setHistory] = useState(null)  // null = hidden, [] = loaded-empty
+  const [historyError, setHistoryError] = useState(null)
+  const [historyBusy, setHistoryBusy] = useState(false)
 
   const run = async (fn, closeAfter = false) => {
     setBusy(true)
@@ -74,6 +78,21 @@ function DraftItem({ draft, onChanged }) {
   const remove = () => {
     if (!window.confirm('Delete this draft? This cannot be undone.')) return
     run(() => api.deleteDraft(draft.path), true)
+  }
+  const toggleHistory = async () => {
+    if (history !== null) {
+      setHistory(null)  // collapse
+      return
+    }
+    setHistoryBusy(true)
+    setHistoryError(null)
+    try {
+      setHistory(await api.draftHistory(draft.path))
+    } catch (err) {
+      setHistoryError(err.message)
+    } finally {
+      setHistoryBusy(false)
+    }
   }
 
   return (
@@ -151,9 +170,20 @@ function DraftItem({ draft, onChanged }) {
               >
                 Publish…
               </button>
+              <button className="btn" onClick={toggleHistory} disabled={historyBusy}>
+                {historyBusy ? 'Loading…' : history !== null ? 'Hide history' : 'History'}
+              </button>
               <button className="btn btn-quiet" onClick={remove} disabled={busy}>
                 Delete
               </button>
+            </div>
+          )}
+
+          {historyError && <div className="alert alert-error">{historyError}</div>}
+          {history !== null && (
+            <div className="history-panel">
+              <p className="muted small">Every save to this draft, newest first.</p>
+              <CommitHistory commits={history} emptyLabel="No saved revisions yet." />
             </div>
           )}
         </div>

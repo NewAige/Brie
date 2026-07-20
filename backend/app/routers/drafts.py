@@ -11,6 +11,7 @@ synced fork main, so a publish PR never drags other drafts along.
 Every endpoint requires the Contributor role: browsers have nowhere to draft.
 """
 
+import difflib
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -106,6 +107,59 @@ async def create_draft(new: NewPrompt,
         session.token, _fork_api(fork), path, branch=DRAFTS_BRANCH,
         content=content, message=f"Draft: {new.title.strip()}")
     return {"message": "Saved to your personal drafts.", "path": path}
+
+
+@router.get("/{path:path}/history")
+async def draft_history(path: str,
+                        session: UserSession = Depends(require_contributor)):
+    """Version history of one draft: every save on the user's `drafts` branch,
+    newest first, with a unified diff against the previous revision. Same shape
+    as `prompt_history` — read from the owner's fork instead of the library
+    `main`, so it stays private (the user's own token, the user's own fork).
+
+    Nuance: the `drafts` branch is created off `main`, so a draft whose path
+    happens to shadow a library file would also list that file's `main`
+    history. That case is rare — publishing is blocked when the path already
+    exists on `main` — so for a genuinely new draft this is exactly its saves.
+    """
+    fork, _raw = await _fetch_draft(session, path)  # validates path, 404s
+    fork_api = _fork_api(fork)
+    commits = await gitea.api(
+        session.token, "GET", f"{fork_api}/commits",
+        params={"path": path, "sha": DRAFTS_BRANCH, "limit": 20,
+                "stat": "false", "verification": "false", "files": "false"},
+    )
+
+    async def content_at(sha: str) -> str:
+        try:
+            return await gitea.api(
+                session.token, "GET", f"{fork_api}/raw/{path}",
+                params={"ref": sha}, raw=True,
+            )
+        except HTTPException:
+            return ""  # file did not exist at this commit
+
+    versions = [await content_at(c["sha"]) for c in commits]
+
+    history = []
+    for i, commit in enumerate(commits):
+        older = versions[i + 1] if i + 1 < len(versions) else ""
+        newer = versions[i]
+        diff = "\n".join(difflib.unified_diff(
+            older.splitlines(), newer.splitlines(),
+            fromfile=f"a/{path}", tofile=f"b/{path}", lineterm="",
+        ))
+        info = commit.get("commit", {})
+        author = (commit.get("author") or {}).get("login") or \
+                 (info.get("author") or {}).get("name") or "unknown"
+        history.append({
+            "sha": commit["sha"],
+            "author": author,
+            "date": (info.get("author") or {}).get("date") or "",
+            "message": info.get("message", "").strip(),
+            "diff": diff,
+        })
+    return history
 
 
 @router.get("/{path:path}")

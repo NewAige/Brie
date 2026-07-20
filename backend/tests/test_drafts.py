@@ -49,7 +49,21 @@ class FakeGitea:
         self.library_main_files: dict[str, str] = {}
         self.open_pr_files: list[str] = []
         self.changed_paths: list[str] = []  # commits unique to drafts branch
+        self.commits: dict[str, list] = {}  # path -> newest-first commit dicts
+        self.blobs: dict[str, str] = {}     # commit sha -> file content at it
         self.writes: list[tuple[str, str, dict]] = []
+
+    def add_revision(self, path: str, sha: str, content: str, *,
+                     message: str = "Draft: update", author: str = UMA,
+                     date: str = "2026-01-01T00:00:00Z") -> None:
+        """Register one draft save: a commit (prepended so the list stays
+        newest-first, as Gitea returns) plus that revision's file content."""
+        self.blobs[sha] = content
+        self.commits.setdefault(path, []).insert(0, {
+            "sha": sha,
+            "commit": {"message": message,
+                       "author": {"name": author, "date": date}},
+        })
 
     def fork(self) -> dict:
         return {"full_name": FORK_FULL, "owner": {"login": UMA},
@@ -83,9 +97,14 @@ class FakeGitea:
         if (method, path) == ("GET", f"{fork}/git/trees/drafts"):
             return {"tree": [{"path": p, "type": "blob"}
                              for p in self.draft_files]}
+        if (method, path) == ("GET", f"{fork}/commits"):
+            return list(self.commits.get(params.get("path"), []))
         if method == "GET" and path.startswith(f"{fork}/raw/"):
             name = path.removeprefix(f"{fork}/raw/")
-            if name in self.draft_files:
+            ref = params.get("ref")
+            if ref in self.blobs:          # a specific commit sha (history)
+                return self.blobs[ref]
+            if name in self.draft_files:   # the live drafts branch
                 return self.draft_files[name]
             raise HTTPException(status_code=404, detail="not found")
         if path.startswith(f"{fork}/contents/"):
@@ -149,6 +168,7 @@ def make_client(monkeypatch):
     ("get", "/api/drafts", None),
     ("post", "/api/drafts", NEW_DRAFT),
     ("get", f"/api/drafts/{DRAFT_PATH}", None),
+    ("get", f"/api/drafts/{DRAFT_PATH}/history", None),
     ("put", f"/api/drafts/{DRAFT_PATH}", {"body": "x"}),
     ("delete", f"/api/drafts/{DRAFT_PATH}", None),
     ("post", f"/api/drafts/{DRAFT_PATH}/publish", {"level": "community"}),
@@ -215,6 +235,56 @@ def test_read_update_delete_draft(fake, make_client):
         assert DRAFT_PATH not in fake.draft_files
 
         assert client.get(f"/api/drafts/{DRAFT_PATH}").status_code == 404
+
+
+# --- history ----------------------------------------------------------------
+
+def _removed_lines(diff: str) -> list[str]:
+    """Content lines a diff removes — excludes the `---` file header."""
+    return [ln for ln in diff.splitlines()
+            if ln.startswith("-") and not ln.startswith("---")]
+
+
+V1 = DRAFT_CONTENT
+V2 = DRAFT_CONTENT.replace("Write a calm escalation email.",
+                          "Write a very calm, measured escalation email.")
+
+
+def test_draft_history_returns_revisions_newest_first_with_diffs(fake, make_client):
+    fake.draft_files[DRAFT_PATH] = V2
+    fake.add_revision(DRAFT_PATH, "sha-old", V1,
+                      message="Draft: Escalation Email Tone", date="2026-01-01T00:00:00Z")
+    fake.add_revision(DRAFT_PATH, "sha-new", V2,
+                      message="Draft: update tone", date="2026-01-02T00:00:00Z")
+    with make_client() as client:
+        resp = client.get(f"/api/drafts/{DRAFT_PATH}/history")
+    assert resp.status_code == 200
+    history = resp.json()
+    assert [h["sha"] for h in history] == ["sha-new", "sha-old"]  # newest first
+    assert history[0]["author"] == UMA
+    assert history[0]["message"] == "Draft: update tone"
+    # Newest entry diffs against the previous revision.
+    assert "+Write a very calm, measured escalation email." in history[0]["diff"]
+    assert "-Write a calm escalation email." in history[0]["diff"]
+    # Oldest entry diffs against nothing — a full add, no removed lines.
+    assert "+Write a calm escalation email." in history[1]["diff"]
+    assert _removed_lines(history[1]["diff"]) == []
+
+
+def test_draft_history_single_commit_is_full_add(fake, make_client):
+    fake.draft_files[DRAFT_PATH] = V1
+    fake.add_revision(DRAFT_PATH, "sha-1", V1, message="Draft: first save")
+    with make_client() as client:
+        resp = client.get(f"/api/drafts/{DRAFT_PATH}/history")
+    history = resp.json()
+    assert len(history) == 1
+    assert "+Write a calm escalation email." in history[0]["diff"]
+
+
+def test_draft_history_404_for_missing_or_reserved_path(fake, make_client):
+    with make_client() as client:
+        assert client.get(f"/api/drafts/{DRAFT_PATH}/history").status_code == 404  # no draft
+        assert client.get("/api/drafts/customer-support/readme.md/history").status_code == 404
 
 
 # --- publish ----------------------------------------------------------------
