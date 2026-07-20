@@ -59,10 +59,13 @@ export const api = {
   drafts: () => request('/api/drafts'),
   createDraft: (payload) =>
     request('/api/drafts', { method: 'POST', body: JSON.stringify(payload) }),
-  updateDraft: (path, body) =>
+  // `meta` (optional): { title, category, tags, target_model, intended_use }.
+  // Omit it for a body-only save, which preserves the front-matter verbatim.
+  // Returns { message, path } — the path changes when title/category do.
+  updateDraft: (path, body, meta = null) =>
     request(`/api/drafts/${encodePath(path)}`, {
       method: 'PUT',
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body, ...(meta || {}) }),
     }),
   deleteDraft: (path) =>
     request(`/api/drafts/${encodePath(path)}`, { method: 'DELETE' }),

@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom'
 import { useAsyncData } from '../hooks.js'
 import { api } from '../api.js'
 import CommitHistory from '../components/CommitHistory.jsx'
+import CopyButton from '../components/CopyButton.jsx'
 import Icon from '../components/Icon.jsx'
+import { slugify } from '../utils.js'
 
 // Personal drafts (phase D): stored in the user's own Gitea fork, visible
 // only to them until they publish. Everything here talks to /api/drafts —
@@ -47,9 +49,21 @@ export default function Drafts() {
   )
 }
 
+// The editable metadata fields, pulled off a draft. Tags are handled
+// separately — they round-trip through a comma-separated text input.
+const metaOf = (draft) => ({
+  title: draft.title,
+  category: draft.category,
+  target_model: draft.target_model || '',
+  intended_use: draft.intended_use || '',
+})
+
 function DraftItem({ draft, onChanged }) {
   const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [body, setBody] = useState(draft.body)
+  const [meta, setMeta] = useState(() => metaOf(draft))
+  const [tagText, setTagText] = useState(draft.tags.join(', '))
   const [publishing, setPublishing] = useState(false)
   const [level, setLevel] = useState('community')
   const [busy, setBusy] = useState(false)
@@ -68,14 +82,39 @@ function DraftItem({ draft, onChanged }) {
       setNotice(res?.message || null)
       if (closeAfter) setTimeout(onChanged, 1200)
       else onChanged()
+      return true
     } catch (err) {
       setError(err.message)
+      return false
     } finally {
       setBusy(false)
     }
   }
 
-  const save = () => run(() => api.updateDraft(draft.path, body))
+  const tags = tagText.split(',').map((t) => t.trim()).filter(Boolean)
+  const dirty =
+    body !== draft.body ||
+    meta.title !== draft.title ||
+    meta.category !== draft.category ||
+    meta.target_model !== draft.target_model ||
+    meta.intended_use !== draft.intended_use ||
+    tags.join(',') !== draft.tags.join(',')
+
+  const cancelEdit = () => {
+    setBody(draft.body)
+    setMeta(metaOf(draft))
+    setTagText(draft.tags.join(', '))
+    setEditing(false)
+  }
+
+  const save = async () => {
+    // Only drop back to the read-only view if the save actually landed —
+    // otherwise the user would lose sight of unsaved text.
+    if (await run(() => api.updateDraft(draft.path, body, { ...meta, tags })))
+      setEditing(false)
+    // A title/category change moves the file, so the reload run() triggers
+    // remounts this item under its new path (the list is keyed by path).
+  }
   const publish = () => {
     setPublishing(false)
     run(() => api.publishDraft(draft.path, level), true)
@@ -113,15 +152,105 @@ function DraftItem({ draft, onChanged }) {
 
       {open && (
         <div className="editor">
-          <label className="field-label" htmlFor={`draft-${draft.path}`}>The prompt</label>
-          <textarea
-            id={`draft-${draft.path}`}
-            className="editor-area"
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            rows={12}
-            spellCheck="true"
-          />
+          {editing ? (
+            <>
+              <div className="draft-meta-fields">
+                <div>
+                  <label className="field-label" htmlFor={`title-${draft.path}`}>Title</label>
+                  <input
+                    id={`title-${draft.path}`}
+                    className="editor-note"
+                    value={meta.title}
+                    onChange={(e) => setMeta({ ...meta, title: e.target.value })}
+                    maxLength={200}
+                  />
+                </div>
+                <div>
+                  <label className="field-label" htmlFor={`category-${draft.path}`}>Category</label>
+                  <input
+                    id={`category-${draft.path}`}
+                    className="editor-note"
+                    value={meta.category}
+                    onChange={(e) => setMeta({ ...meta, category: e.target.value })}
+                    maxLength={100}
+                  />
+                </div>
+              </div>
+              <label className="field-label" htmlFor={`tags-${draft.path}`}>Tags</label>
+              <input
+                id={`tags-${draft.path}`}
+                className="editor-note"
+                value={tagText}
+                onChange={(e) => setTagText(e.target.value)}
+                placeholder="comma, separated, tags"
+              />
+              <label className="field-label" htmlFor={`model-${draft.path}`}>Target model</label>
+              <input
+                id={`model-${draft.path}`}
+                className="editor-note"
+                value={meta.target_model}
+                onChange={(e) => setMeta({ ...meta, target_model: e.target.value })}
+                maxLength={200}
+              />
+              <label className="field-label" htmlFor={`use-${draft.path}`}>Intended use</label>
+              <input
+                id={`use-${draft.path}`}
+                className="editor-note"
+                value={meta.intended_use}
+                onChange={(e) => setMeta({ ...meta, intended_use: e.target.value })}
+                maxLength={2000}
+              />
+              {(slugify(meta.title) !== slugify(draft.title) ||
+                slugify(meta.category) !== slugify(draft.category)) && (
+                <div className="alert alert-warn">
+                  Saving moves this draft to{' '}
+                  <code>{`${slugify(meta.category)}/${slugify(meta.title)}.md`}</code>.
+                </div>
+              )}
+
+              <label className="field-label" htmlFor={`draft-${draft.path}`}>The prompt</label>
+              <textarea
+                id={`draft-${draft.path}`}
+                className="editor-area"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={12}
+                spellCheck="true"
+              />
+            </>
+          ) : (
+            <>
+              <div className="meta-card card">
+                <dl className="meta-grid">
+                  <dt>Category</dt>
+                  <dd>{draft.category}</dd>
+                  {draft.target_model && (
+                    <>
+                      <dt>Target model</dt>
+                      <dd>{draft.target_model}</dd>
+                    </>
+                  )}
+                  {draft.intended_use && (
+                    <>
+                      <dt>Intended use</dt>
+                      <dd>{draft.intended_use}</dd>
+                    </>
+                  )}
+                  {draft.tags.length > 0 && (
+                    <>
+                      <dt>Tags</dt>
+                      <dd className="tags">
+                        {draft.tags.map((t) => (
+                          <span key={t} className="tag tag-static">{t}</span>
+                        ))}
+                      </dd>
+                    </>
+                  )}
+                </dl>
+              </div>
+              <pre className="prompt-body">{body}</pre>
+            </>
+          )}
 
           {publishing && (
             <div className="card publish-card">
@@ -164,13 +293,24 @@ function DraftItem({ draft, onChanged }) {
 
           {!publishing && (
             <div className="editor-actions">
+              <CopyButton text={body} path={draft.path} large />
               <button
-                className="btn btn-primary"
-                onClick={save}
-                disabled={busy || !body.trim() || body === draft.body}
+                className="btn"
+                onClick={() => (editing ? cancelEdit() : setEditing(true))}
+                disabled={busy}
               >
-                {busy ? 'Saving…' : 'Save draft'}
+                <Icon name="edit" size={16} /> {editing ? 'Cancel edit' : 'Edit draft'}
               </button>
+              {editing && (
+                <button
+                  className="btn btn-primary"
+                  onClick={save}
+                  disabled={busy || !body.trim() || !meta.title.trim() ||
+                            !meta.category.trim() || !dirty}
+                >
+                  {busy ? 'Saving…' : 'Save draft'}
+                </button>
+              )}
               <button
                 className="btn"
                 onClick={() => setPublishing(true)}

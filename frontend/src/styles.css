@@ -562,6 +562,9 @@ select.editor-note {
   box-shadow: 0 0 0 3px rgba(0, 111, 81, 0.18);
 }
 .editor-actions { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin-top: 0.35rem; }
+/* Title + category sit side by side in the draft editor; they stack on narrow screens. */
+.draft-meta-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
+@media (max-width: 640px) { .draft-meta-fields { grid-template-columns: 1fr; } }
 
 /* -------------------------------------------------- History & suggestions */
 .history-list { display: flex; flex-direction: column; gap: 0.65rem; margin-top: 0.75rem; }

@@ -170,16 +170,86 @@ async def get_draft(path: str, session: UserSession = Depends(require_contributo
 
 class DraftUpdate(BaseModel):
     body: str = Field(min_length=1, description="The new draft body (no front-matter)")
+    # Metadata is optional: omit every field and this stays a body-only save,
+    # preserving the original front-matter byte-for-byte (the old behaviour).
+    title: str | None = None
+    category: str | None = None
+    tags: list[str] | None = None
+    target_model: str | None = None
+    intended_use: str | None = None
+
+    def touches_metadata(self) -> bool:
+        return any(v is not None for v in (self.title, self.category, self.tags,
+                                           self.target_model, self.intended_use))
 
 
 @router.put("/{path:path}")
 async def update_draft(path: str, update: DraftUpdate,
                        session: UserSession = Depends(require_contributor)):
+    """Save a draft. Body-only edits preserve the front-matter verbatim; when
+    metadata is supplied the front-matter is re-rendered. Because the path is
+    derived from title+category (exactly as in create_draft), editing either
+    one MOVES the file: commit at the new path, then delete the old one."""
     fork, raw = await _fetch_draft(session, path)
+    fork_api = _fork_api(fork)
+
+    if not update.touches_metadata():
+        await forks.commit_to_branch(
+            session.token, fork_api, path, branch=DRAFTS_BRANCH,
+            content=replace_body(raw, update.body), message=f"Draft: update {path}")
+        return {"message": "Draft saved.", "path": path}
+
+    current = parse_prompt(path, raw)
+    title = (update.title if update.title is not None else current["title"]).strip()
+    category = slugify(update.category if update.category is not None
+                       else current["category"])
+    slug = slugify(title)
+    if not category or not slug:
+        raise HTTPException(status_code=400,
+                            detail="Title and category must contain letters or numbers.")
+    new_path = f"{category}/{slug}.md"
+    if not is_prompt_file(new_path):
+        raise HTTPException(status_code=400, detail="That name is reserved.")
+
+    if new_path != path:
+        if await _draft_exists(session.token, fork, new_path):
+            raise HTTPException(
+                status_code=409,
+                detail="You already have a draft with this name in that category.")
+        if await forks.file_exists_on_main(session.token, new_path):
+            raise HTTPException(
+                status_code=409,
+                detail="A prompt with this name already exists in the library. "
+                       "Pick a different title or category.")
+
+    tags = (current["tags"] if update.tags is None else
+            list(dict.fromkeys(t for t in (slugify(t) for t in update.tags) if t)))
+    # `status`/`level` stay backend-owned: the review flow sets them, never the
+    # draft editor. `author`/`owner` likewise come from the session.
+    content = render_prompt({
+        "title": title,
+        "category": category,
+        "tags": tags,
+        "status": "draft",
+        "author": current["author"] or session.username,
+        "owner": current["owner"] or session.username,
+        "target_model": (update.target_model if update.target_model is not None
+                         else current["target_model"]),
+        "intended_use": (update.intended_use if update.intended_use is not None
+                         else current["intended_use"]),
+        "copied_from": current["copied_from"],
+    }, update.body)
+
     await forks.commit_to_branch(
-        session.token, _fork_api(fork), path, branch=DRAFTS_BRANCH,
-        content=replace_body(raw, update.body), message=f"Draft: update {path}")
-    return {"message": "Draft saved."}
+        session.token, fork_api, new_path, branch=DRAFTS_BRANCH,
+        content=content, message=f"Draft: update {new_path}")
+    if new_path != path:
+        # Write-then-delete: if the delete fails the draft still exists at the
+        # new path, so no content is ever lost.
+        await forks.delete_file(session.token, fork_api, path,
+                                branch=DRAFTS_BRANCH,
+                                message=f"Draft: rename {path} -> {new_path}")
+    return {"message": "Draft saved.", "path": new_path}
 
 
 @router.delete("/{path:path}")
