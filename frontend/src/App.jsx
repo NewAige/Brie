@@ -11,6 +11,7 @@ import Login from './pages/Login.jsx'
 import NewPrompt from './pages/NewPrompt.jsx'
 import PromptDetail from './pages/PromptDetail.jsx'
 import Suggestions from './pages/Suggestions.jsx'
+import Icon from './components/Icon.jsx'
 
 const ROLE_LABELS = {
   browser: 'Browser',
@@ -18,6 +19,14 @@ const ROLE_LABELS = {
   approver: 'Bank Approver',
   admin: 'Admin',
 }
+
+const initials = (name = '') =>
+  name
+    .split(/[\s.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join('') || '?'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -31,7 +40,13 @@ export default function App() {
       .finally(() => setChecking(false))
   }, [])
 
-  if (checking) return <div className="center-screen muted">Loading…</div>
+  if (checking) {
+    return (
+      <div className="center-screen">
+        <div className="spinner-row"><span className="spinner" /> Loading…</div>
+      </div>
+    )
+  }
   if (!user) return <Login />
 
   const logout = async () => {
@@ -48,15 +63,20 @@ export default function App() {
               <span className="brand-mark">¶</span> Prompt Library
             </NavLink>
             <nav className="nav">
-              <NavLink to="/" end>Library</NavLink>
-              {user.role !== 'browser' && <NavLink to="/drafts">My drafts</NavLink>}
-              <NavLink to="/suggestions">Suggestions</NavLink>
-              <NavLink to="/activity">Activity</NavLink>
-              {user.role === 'admin' && <NavLink to="/admin">Users</NavLink>}
+              <NavLink to="/" end><Icon name="folder" size={16} /> Library</NavLink>
+              {user.role !== 'browser' && <NavLink to="/drafts"><Icon name="edit" size={16} /> My drafts</NavLink>}
+              <NavLink to="/suggestions"><Icon name="inbox" size={16} /> Suggestions</NavLink>
+              <NavLink to="/activity"><Icon name="activity" size={16} /> Activity</NavLink>
+              {user.role === 'admin' && <NavLink to="/admin"><Icon name="users" size={16} /> Users</NavLink>}
             </nav>
             <div className="userbox">
-              <span className="user-name">{user.full_name}</span>
-              <span className={`role-chip role-${user.role}`}>{ROLE_LABELS[user.role] || user.role}</span>
+              <div className="user-id">
+                <span className="avatar" aria-hidden="true">{initials(user.full_name || user.username)}</span>
+                <span className="user-meta">
+                  <span className="user-name">{user.full_name}</span>
+                  <span className={`role-chip role-${user.role}`}>{ROLE_LABELS[user.role] || user.role}</span>
+                </span>
+              </div>
               <button className="btn btn-quiet" onClick={logout}>Sign out</button>
             </div>
           </div>

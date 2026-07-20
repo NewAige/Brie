@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAsyncData } from '../hooks.js'
 import { api } from '../api.js'
+import Icon from '../components/Icon.jsx'
 
 // Mirrors the server's slugify closely enough for a live path preview.
 // The server's derivation is authoritative.
@@ -191,10 +192,10 @@ export default function NewPrompt() {
         {error && <div className="alert alert-error">{error}</div>}
         <div className="editor-actions">
           <button className="btn btn-primary" onClick={submit} disabled={busy || !ready}>
-            {busy ? 'Sending…' : 'Send for review'}
+            <Icon name="send" size={16} /> {busy ? 'Sending…' : 'Send for review'}
           </button>
           <button className="btn" onClick={saveDraft} disabled={busy || !ready}>
-            Save as personal draft
+            <Icon name="edit" size={16} /> Save as personal draft
           </button>
           <span className="muted small">
             Sending goes to the approvers; a personal draft saves instantly and

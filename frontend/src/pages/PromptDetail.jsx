@@ -5,6 +5,7 @@ import { api } from '../api.js'
 import CopyButton from '../components/CopyButton.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
 import LevelBadge from '../components/LevelBadge.jsx'
+import Icon from '../components/Icon.jsx'
 
 export default function PromptDetail() {
   // Path after /prompt/ — may contain slashes.
@@ -15,7 +16,7 @@ export default function PromptDetail() {
   const [sent, setSent] = useState(null)
   const navigate = useNavigate()
 
-  if (loading) return <div className="muted">Loading…</div>
+  if (loading) return <div className="spinner-row"><span className="spinner" /> Loading…</div>
   if (error) return <div className="alert alert-error">{error}</div>
 
   return (
@@ -92,14 +93,16 @@ export default function PromptDetail() {
         {user.role !== 'browser' && (
           <>
             <button className="btn" onClick={() => { setEditing(!editing); setSent(null) }}>
-              {editing ? 'Cancel suggestion' : 'Suggest an edit'}
+              <Icon name="edit" size={16} /> {editing ? 'Cancel suggestion' : 'Suggest an edit'}
             </button>
             <button className="btn" onClick={() => navigate('/new', { state: { from: prompt } })}>
-              Make a copy
+              <Icon name="doc" size={16} /> Make a copy
             </button>
           </>
         )}
-        <Link className="btn btn-quiet" to={`/history/${prompt.path}`}>History</Link>
+        <Link className="btn btn-quiet" to={`/history/${prompt.path}`}>
+          <Icon name="history" size={16} /> History
+        </Link>
       </div>
 
       {sent && <div className="alert alert-success">{sent}</div>}

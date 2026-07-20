@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react'
 import { api } from '../api.js'
+import Icon from './Icon.jsx'
 
 // THE feature (spec §4): copies the prompt body only — the backend already
 // stripped the YAML front-matter, so `text` is exactly what gets copied.
@@ -42,7 +43,13 @@ export default function CopyButton({ text, path, large }) {
       onClick={copy}
       title="Copy the prompt text to your clipboard"
     >
-      {state === 'copied' ? '✓ Copied' : state === 'failed' ? 'Copy failed — select manually' : 'Copy prompt'}
+      {state === 'copied' ? (
+        <><Icon name="check" size={16} /> Copied</>
+      ) : state === 'failed' ? (
+        'Copy failed — select manually'
+      ) : (
+        <><Icon name="copy" size={16} /> Copy prompt</>
+      )}
     </button>
   )
 }
