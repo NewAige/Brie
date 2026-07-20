@@ -17,7 +17,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import forks, gitea, prompt_index
+from .. import forks, gitea, prompt_index, roles
 from ..deps import UserSession, require_contributor
 from ..frontmatter import parse_prompt, render_prompt, replace_body
 from ..paths import is_prompt_file, slugify
@@ -261,15 +261,29 @@ async def delete_draft(path: str, session: UserSession = Depends(require_contrib
 
 
 class PublishRequest(BaseModel):
-    level: Literal["bank", "community"]
+    # Community is the default publication level: a contributor who says
+    # nothing gets the tier they are allowed to publish at.
+    level: Literal["bank", "community"] = "community"
 
 
 @router.post("/{path:path}/publish")
 async def publish_draft(path: str, publish: PublishRequest,
                         session: UserSession = Depends(require_contributor)):
-    """Send one draft for review at the chosen level. The front-matter is
-    re-rendered server-side (an approver reviews the level along with the
-    content — it is never self-granted just by picking "bank")."""
+    """Send one draft to the library at the chosen level.
+
+    Community is the default and needs no approver: the PR it opens is
+    self-mergeable by its author (ownership.py phase E). Bank is approver-only
+    — and gated HERE, not merely in the UI, because asking for `level: bank`
+    is what puts a prompt in the tier whose every future edit requires a Bank
+    Approver. The front-matter is always re-rendered server-side, so the level
+    is never taken from draft content.
+    """
+    if publish.level == "bank" and not await _is_approver(session):
+        raise HTTPException(
+            status_code=403,
+            detail="Only a Bank Approver can publish a prompt at Bank level. "
+                   "Publish it to the Community library instead — an approver "
+                   "can raise it to Bank later.")
     fork, raw = await _fetch_draft(session, path)
     if await forks.file_exists_on_main(session.token, path):
         raise HTTPException(status_code=409,
@@ -302,14 +316,28 @@ async def publish_draft(path: str, publish: PublishRequest,
         pr_title=f"New prompt: {prompt['title']}",
         pr_body=(prompt["intended_use"] or "New prompt.") + origin,
     )
-    return {"message": "Your draft has been sent for review.",
-            "id": pr["number"], "path": path}
+    # Community publishes are self-mergeable, so the PR is a step on the way in
+    # rather than a wait for someone — say so, and point at the button that
+    # finishes the job.
+    message = ("Your prompt is ready to publish — open it under Suggestions "
+               "and publish it to the library."
+               if publish.level == "community" else
+               "Your draft has been sent to a Bank Approver for review.")
+    return {"message": message, "id": pr["number"], "path": path,
+            "level": publish.level}
 
 
 # --- helpers ----------------------------------------------------------------
 
 def _fork_api(fork: dict) -> str:
     return f"/repos/{fork['full_name']}"
+
+
+async def _is_approver(session: UserSession) -> bool:
+    """May this user publish at Bank level? Derived live from Gitea like every
+    other role check; anything short of approver (or admin) is a no."""
+    role = await roles.get_role(session.session_id, session.token)
+    return role in ("approver", "admin")
 
 
 async def _fetch_draft(session: UserSession, path: str) -> tuple[dict, str]:

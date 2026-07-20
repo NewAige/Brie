@@ -13,6 +13,11 @@ the single source of truth):
                  one DOES record the username: it is a security audit log for
                  an authorization bypass, not usage analytics, and "who" is the
                  whole point of keeping it.
+- favorites:     which prompts a user marked to come back to. Also records the
+                 username, for the same reason a bookmark list has to: it is
+                 the user's own data, shown back only to them, and useless
+                 without knowing whose it is. Not analytics — nothing aggregates
+                 across users, and it is deleted when the user unmarks it.
 """
 
 import os
@@ -50,6 +55,13 @@ CREATE TABLE IF NOT EXISTS owner_merges (
     kind      TEXT NOT NULL DEFAULT 'self'
 );
 CREATE INDEX IF NOT EXISTS idx_owner_merges_ts ON owner_merges(ts);
+CREATE TABLE IF NOT EXISTS favorites (
+    username TEXT NOT NULL,
+    path     TEXT NOT NULL,
+    ts       REAL NOT NULL,
+    PRIMARY KEY (username, path)
+);
+CREATE INDEX IF NOT EXISTS idx_favorites_username ON favorites(username);
 """
 
 
@@ -169,6 +181,31 @@ def recent_owner_merges(limit: int = 50) -> list[dict]:
     return [{"username": r["username"], "pr_id": r["pr_id"],
              "paths": r["paths"].split("\n"), "ts": r["ts"],
              "pr_author": r["pr_author"], "kind": r["kind"]} for r in rows]
+
+
+# --- favorites --------------------------------------------------------------
+
+def add_favorite(username: str, path: str) -> None:
+    """Mark a prompt. Idempotent — re-marking keeps the original timestamp."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO favorites (username, path, ts) VALUES (?, ?, ?)",
+            (username, path, time.time()),
+        )
+
+
+def remove_favorite(username: str, path: str) -> None:
+    with connect() as conn:
+        conn.execute("DELETE FROM favorites WHERE username = ? AND path = ?",
+                     (username, path))
+
+
+def favorite_paths(username: str) -> set[str]:
+    """Every path this user has marked. A set — callers do membership tests."""
+    with connect() as conn:
+        rows = conn.execute("SELECT path FROM favorites WHERE username = ?",
+                            (username,)).fetchall()
+    return {r["path"] for r in rows}
 
 
 def most_copied(limit: int = 10) -> list[dict]:

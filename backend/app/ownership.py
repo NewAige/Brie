@@ -18,6 +18,18 @@ Bank prompts approver-only regardless of ownership; the head-side check stops
 an owner self-merging a flip to `level: bank` and thereby forging a
 bank-approved prompt.
 
+Phase E adds self-publish: a brand-new community prompt may be merged by its
+own author, so posting to the Community path needs no approver. New files have
+no main-side facts to check, so the rule cannot lean on `owner` front-matter
+(the PR could simply assert it). It leans on the PR AUTHOR instead — a Gitea
+fact the file's content cannot forge — and still requires the head to declare
+`level: community` and `owner: <that same author>`. Consequences, all
+deliberate: a new `level: bank` prompt remains approver-only, a new file naming
+someone else as owner is not self-mergeable, and a peer's brand-new prompt is
+approver-only (it has no established owner to route to yet). Once it lands,
+the file exists on main and every later edit follows the ordinary owner rule
+above — back to its owner.
+
 The predicate itself (`decide`) is pure: it takes an already-fetched view of
 the PR and returns a decision, so the interesting cases are unit-testable
 without a Gitea running (tests/test_ownership.py).
@@ -81,7 +93,8 @@ def level_of(raw: str) -> str:
 
 def decide(username: str, paths: list[str],
            facts_on_main: dict[str, FileFacts | None],
-           levels_on_head: dict[str, str], pr_author: str = "") -> Decision:
+           levels_on_head: dict[str, str], pr_author: str = "",
+           owners_on_head: dict[str, str] | None = None) -> Decision:
     """Pure predicate: may `username` merge a PR touching `paths`?
 
     `facts_on_main` maps each path to its owner and level AS READ FROM MAIN —
@@ -97,8 +110,17 @@ def decide(username: str, paths: list[str],
     ever saw. A path missing from the map denies.
 
     `pr_author` (who opened the PR) is passed through to the Decision for the
-    audit log. It plays no part in the answer: an owner may merge their own
-    change and a peer's suggestion under exactly the same conditions.
+    audit log. For files that exist on main it plays no part in the answer: an
+    owner may merge their own change and a peer's suggestion under exactly the
+    same conditions. For NEW files it is load-bearing — see below.
+
+    `owners_on_head` maps each path to its `owner` on the PR head. It is
+    consulted ONLY for paths absent from main (phase E self-publish), where
+    there is no main-side owner to read. Trusting it is safe only in
+    combination with the `pr_author == username` check: a PR may assert any
+    owner it likes, but it cannot assert who opened it. For paths that DO exist
+    on main this map is ignored entirely — main remains the sole authority on
+    ownership, which is the rule that makes the whole predicate safe.
     """
     if not username:
         return Decision(False, "no user")
@@ -112,9 +134,17 @@ def decide(username: str, paths: list[str],
             return Decision(False, f"not a prompt file: {path}")
         facts = facts_on_main.get(path)
         if facts is None:
-            # Not on main: a new prompt. Self-publishing a brand-new file with
-            # `owner: me` is authoring, not ownership.
-            return Decision(False, f"not on main: {path}")
+            # Not on main: a brand-new prompt (phase E self-publish). There is
+            # no main-side fact to check, so authorize on the PR author — which
+            # the file cannot forge — plus a head that declares the author as
+            # owner at community level. Anything else goes to an approver.
+            if not pr_author or pr_author != username:
+                return Decision(False, f"new file by another author: {path}")
+            if (owners_on_head or {}).get(path) != username:
+                return Decision(False, f"new file not owned by {username}: {path}")
+            if levels_on_head.get(path) != "community":
+                return Decision(False, f"new file not community: {path}")
+            continue
         if not facts.owner:
             return Decision(False, f"unowned on main: {path}")
         if facts.owner != username:
@@ -124,7 +154,10 @@ def decide(username: str, paths: list[str],
         if levels_on_head.get(path) != "community":
             return Decision(False, f"not community on PR head: {path}")
 
-    return Decision(True, f"{username} owns all {len(paths)} community file(s)",
+    new_count = sum(1 for p in paths if facts_on_main.get(p) is None)
+    detail = f" ({new_count} newly published)" if new_count else ""
+    return Decision(True,
+                    f"{username} owns all {len(paths)} community file(s){detail}",
                     tuple(paths), pr_author)
 
 
@@ -165,23 +198,29 @@ async def owner_mergeable(token: str, username: str, pr_id: int) -> Decision:
     if any(not p for p in paths):
         return Decision(False, "unnamed file in PR")
 
-    # Cheap structural checks first, so a junk PR costs no file reads.
+    # Cheap structural checks first (path shape, file cap), so a junk PR costs
+    # no file reads. Feeding owner-less facts makes every path fail at the
+    # ownership step, so only the structural reasons can come back — anything
+    # about ownership or level has to wait for the real reads below.
     pre = decide(username, paths, {p: FileFacts("", "bank") for p in paths}, {})
     if not pre.allowed and not pre.reason.startswith("unowned on main"):
         return pre
 
     facts: dict[str, FileFacts | None] = {}
     levels_on_head: dict[str, str] = {}
+    owners_on_head: dict[str, str] = {}
     for path in paths:
         try:
             raw = await gitea.api(token, "GET", f"{settings.repo_api}/raw/{path}",
                                   params={"ref": "main"}, raw=True)
         except HTTPException as exc:
-            if exc.status_code == 404:
-                facts[path] = None  # new file — denied by `decide`
-                continue
-            return Decision(False, f"could not read {path} on main")
-        facts[path] = FileFacts(owner_of(raw), level_of(raw))
+            if exc.status_code != 404:
+                return Decision(False, f"could not read {path} on main")
+            # New file. Not a denial by itself any more (phase E): fall through
+            # to the head reads, which is where a self-publish is authorized.
+            facts[path] = None
+        else:
+            facts[path] = FileFacts(owner_of(raw), level_of(raw))
 
         # Head level: what the file WOULD say after merge. A file deleted on
         # the head 404s here and stays absent from the map, which denies.
@@ -194,5 +233,9 @@ async def owner_mergeable(token: str, username: str, pr_id: int) -> Decision:
                 continue
             return Decision(False, f"could not read {path} on PR head")
         levels_on_head[path] = level_of(head_raw)
+        # Only consulted for files absent from main (phase E self-publish);
+        # read unconditionally because it costs nothing extra here.
+        owners_on_head[path] = owner_of(head_raw)
 
-    return decide(username, paths, facts, levels_on_head, pr_author)
+    return decide(username, paths, facts, levels_on_head, pr_author,
+                  owners_on_head)

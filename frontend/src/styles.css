@@ -44,6 +44,10 @@
   --purple-bg: #f3edfb;
   --purple-border: #e0d2f3;
   --gray-bg: #edf0f5;
+  /* Favourite star. Warmer and lighter than --amber, which is tuned for text
+     on --amber-bg; this one has to read as a filled shape on white. */
+  --star: #d99106;
+  --star-strong: #a86c02;
 
   /* Type & shape */
   --font: "Source Sans 3", "Source Sans Pro", -apple-system, BlinkMacSystemFont,
@@ -405,6 +409,36 @@ a:hover { text-decoration: underline; }
 .tag-static { cursor: default; }
 .tag-static:hover { color: var(--text-secondary); border-color: var(--border); background: var(--surface-sunken); }
 .tags { display: inline-flex; flex-wrap: wrap; gap: 0.35rem; }
+
+/* ------------------------------------------------------------- Favourites */
+/* Two variants: a bare star on cards, and a labelled .btn on the prompt page.
+   The chrome-stripping below is scoped to :not(.btn) — unscoped it would sit
+   after .btn in the cascade at equal specificity and flatten the large
+   variant into borderless text. */
+.fav-btn {
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  position: relative;
+  z-index: 1;   /* above the card title's ::after overlay (cf. .card-foot .tag) */
+  border-radius: var(--radius-sm);
+}
+.fav-btn:not(.btn) {
+  padding: 0.12rem;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  /* .btn brings its own richer transition; only the bare star needs this. */
+  transition: color 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.fav-btn:not(.btn):hover { color: var(--star); transform: scale(1.12); }
+.fav-btn:not(.btn).fav-btn-on { color: var(--star); }
+.fav-btn:not(.btn).fav-btn-on:hover { color: var(--star-strong); }
+/* Large variant: keeps .btn's box, overrides only the colour. */
+.fav-btn.btn.fav-btn-on { border-color: var(--star); color: var(--star-strong); }
+.fav-btn.btn.fav-btn-on:hover { border-color: var(--star-strong); }
 
 /* ----------------------------------------------------------------- Cards */
 .card {

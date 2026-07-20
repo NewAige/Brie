@@ -6,6 +6,7 @@ import CopyButton from '../components/CopyButton.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
 import LevelBadge from '../components/LevelBadge.jsx'
 import Icon from '../components/Icon.jsx'
+import FavoriteButton from '../components/FavoriteButton.jsx'
 
 export default function PromptDetail() {
   // Path after /prompt/ — may contain slashes.
@@ -90,6 +91,7 @@ export default function PromptDetail() {
 
       <div className="body-actions">
         <CopyButton text={prompt.body} path={prompt.path} large />
+        <FavoriteButton path={prompt.path} favorited={prompt.favorited} large />
         {user.role !== 'browser' && (
           <>
             <button className="btn" onClick={() => { setEditing(!editing); setSent(null) }}>

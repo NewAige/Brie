@@ -78,8 +78,9 @@ export default function NewPrompt() {
             </>
           ) : (
             <>
-              It will appear in the library once an approver reviews it. You can track
-              it under <Link to="/suggestions">Suggestions</Link>.
+              It goes to the Community library with you as its owner — no approver
+              needed. Finish publishing it under{' '}
+              <Link to="/suggestions">Suggestions</Link>.
             </>
           )}
         </p>
@@ -182,14 +183,15 @@ export default function NewPrompt() {
         {error && <div className="alert alert-error">{error}</div>}
         <div className="editor-actions">
           <button className="btn btn-primary" onClick={submit} disabled={busy || !ready}>
-            <Icon name="send" size={16} /> {busy ? 'Sending…' : 'Send for review'}
+            <Icon name="send" size={16} /> {busy ? 'Publishing…' : 'Publish to Community'}
           </button>
           <button className="btn" onClick={saveDraft} disabled={busy || !ready}>
             <Icon name="edit" size={16} /> Save as personal draft
           </button>
           <span className="muted small">
-            Sending goes to the approvers; a personal draft saves instantly and
-            stays private to you until you publish it.
+            New prompts go to the Community library, where you stay their owner —
+            no approver needed. A personal draft saves instantly and stays
+            private to you until you publish it.
           </span>
         </div>
       </div>
