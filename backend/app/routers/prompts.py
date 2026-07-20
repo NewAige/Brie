@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from .. import db, forks, gitea, prompt_index
+from ..categories import DEPARTMENTS
 from ..config import settings
 from ..deps import UserSession, current_session, require_contributor
 from ..frontmatter import parse_prompt, render_prompt, replace_body, split_front_matter
@@ -28,12 +29,13 @@ def _public(prompt: dict, with_body: bool, favorited: bool = False) -> dict:
 @router.get("/categories")
 async def categories(session: UserSession = Depends(current_session)):
     prompts = await prompt_index.get_index(session.token)
-    counts: dict[str, int] = {}
+    counts: dict[str, int] = {name: 0 for name in DEPARTMENTS}
     for p in prompts:
         if p["status"] == "deprecated":
             continue
         counts[p["category"]] = counts.get(p["category"], 0) + 1
-    return [{"name": name, "count": counts[name]} for name in sorted(counts)]
+    names = DEPARTMENTS + sorted(name for name in counts if name not in DEPARTMENTS)
+    return [{"name": name, "count": counts[name]} for name in names]
 
 
 @router.get("/prompts")
@@ -168,8 +170,11 @@ async def create_prompt(new: NewPrompt,
                         session: UserSession = Depends(require_contributor)):
     """Create a brand-new prompt (from scratch, or "Make a copy" of an
     existing one) as a PR, through the same fork/branch chain as suggestions.
-    The path is derived server-side: <category-slug>/<title-slug>.md."""
-    category = slugify(new.category)
+    The path is derived server-side: <category-slug>/<title-slug>.md.
+    A category matching one of the fixed departments is used verbatim (so it
+    lands in the same folder as the seeded prompts for that department);
+    anything else is slugified, same as a title."""
+    category = new.category.strip() if new.category.strip() in DEPARTMENTS else slugify(new.category)
     slug = slugify(new.title)
     if not category or not slug:
         raise HTTPException(status_code=400,

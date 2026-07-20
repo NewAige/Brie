@@ -24,11 +24,13 @@ export default function NewPrompt() {
   const [sent, setSent] = useState(null)
 
   const effectiveCategory = category === NEW_CATEGORY ? newCategory : category
+  const knownCategories = useMemo(() => new Set((cats.data || []).map((c) => c.name)), [cats.data])
   const pathPreview = useMemo(() => {
-    const c = slugify(effectiveCategory)
+    const trimmed = effectiveCategory.trim()
+    const c = knownCategories.has(trimmed) ? trimmed : slugify(effectiveCategory)
     const s = slugify(title)
     return c && s ? `${c}/${s}.md` : null
-  }, [effectiveCategory, title])
+  }, [effectiveCategory, title, knownCategories])
 
   const ready = title.trim().length >= 3 && effectiveCategory.trim() && body.trim()
 

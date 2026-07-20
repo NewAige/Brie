@@ -59,6 +59,12 @@ export default function Browse() {
     <div>
       <div className="page-head">
         <h1>Library</h1>
+        {user.role !== 'browser' && (
+          <Link className="btn btn-primary" to="/new"><Icon name="plus" size={16} /> New prompt</Link>
+        )}
+      </div>
+
+      <div className="toolbar" role="group" aria-label="Search and filters">
         <div className="search-wrap">
           <Icon name="search" size={16} />
           <input
@@ -70,56 +76,80 @@ export default function Browse() {
             autoFocus
           />
         </div>
-        {user.role !== 'browser' && (
-          <Link className="btn btn-primary" to="/new"><Icon name="plus" size={16} /> New prompt</Link>
-        )}
-      </div>
 
-      <div className="filter-row">
+        <span className="toolbar-divider" aria-hidden="true" />
+
+        <label className="select-wrap">
+          <span className="visually-hidden">Category</span>
+          <select
+            className="select-control"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+          >
+            <option value="">All categories</option>
+            {(cats.data || []).map((c) => (
+              <option key={c.name} value={c.name}>
+                {c.name} ({c.count})
+              </option>
+            ))}
+          </select>
+          <Icon name="chevron-down" size={15} />
+        </label>
+
+        <label className="select-wrap">
+          <span className="visually-hidden">Tag</span>
+          <select
+            className="select-control"
+            value={tag}
+            onChange={(e) => setTag(e.target.value)}
+          >
+            <option value="">All tags</option>
+            {allTags.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+          <Icon name="chevron-down" size={15} />
+        </label>
+
+        <span className="toolbar-divider" aria-hidden="true" />
+
         <button
-          className={`chip ${favorites ? 'chip-active' : ''}`}
+          className={`toggle ${favorites ? 'toggle-on' : ''}`}
           onClick={() => setFavorites(!favorites)}
           aria-pressed={favorites}
         >
-          <Icon name="star" size={14} filled={favorites} /> Favourites
+          <Icon name="star" size={15} filled={favorites} /> Favourites
         </button>
         <button
-          className={`chip ${mine ? 'chip-active' : ''}`}
+          className={`toggle ${mine ? 'toggle-on' : ''}`}
           onClick={() => setMine(!mine)}
           aria-pressed={mine}
         >
-          <Icon name="edit" size={14} /> Written by me
+          <Icon name="edit" size={15} /> Written by me
         </button>
-      </div>
 
-      <div className="filter-row">
-        <button className={`chip ${category === '' ? 'chip-active' : ''}`} onClick={() => setCategory('')}>
-          All categories
-        </button>
-        {(cats.data || []).map((c) => (
+        {(category || tag || favorites || mine || query) && (
           <button
-            key={c.name}
-            className={`chip ${category === c.name ? 'chip-active' : ''}`}
-            onClick={() => setCategory(category === c.name ? '' : c.name)}
+            className="toggle toggle-clear"
+            onClick={() => {
+              setCategory('')
+              setTag('')
+              setFavorites(false)
+              setMine(false)
+              setQuery('')
+            }}
           >
-            {c.name} <span className="chip-count">{c.count}</span>
+            <Icon name="close" size={14} /> Clear
           </button>
-        ))}
-      </div>
+        )}
 
-      {allTags.length > 0 && (
-        <div className="filter-row">
-          {allTags.map((t) => (
-            <button
-              key={t}
-              className={`tag ${tag === t ? 'tag-active' : ''}`}
-              onClick={() => setTag(tag === t ? '' : t)}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      )}
+        {prompts.data && (
+          <span className="toolbar-count">
+            {prompts.data.length} {prompts.data.length === 1 ? 'prompt' : 'prompts'}
+            {(debounced || category || tag || favorites || mine) ? ' found' : ''}
+          </span>
+        )}
+      </div>
 
       {prompts.error && <div className="alert alert-error">{prompts.error}</div>}
       {prompts.data && prompts.data.length === 0 && (
@@ -141,12 +171,6 @@ export default function Browse() {
               <span>Try a different search, or clear a filter above.</span>
             </>
           )}
-        </div>
-      )}
-      {prompts.data && prompts.data.length > 0 && (
-        <div className="muted small result-count">
-          {prompts.data.length} {prompts.data.length === 1 ? 'prompt' : 'prompts'}
-          {(debounced || category || tag || favorites || mine) ? ' found' : ' in the library'}
         </div>
       )}
       <div className="card-grid">

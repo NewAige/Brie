@@ -60,6 +60,8 @@ const PATHS = {
     </>
   ),
   chevron: <path d="m9 6 6 6-6 6" />,
+  'chevron-down': <path d="m6 9.5 6 6 6-6" />,
+  close: <path d="M6 6l12 12M18 6 6 18" />,
   star: <path d="m12 3.4 2.7 5.5 6 .9-4.35 4.25 1.03 6-5.38-2.83-5.38 2.83 1.03-6L3.3 9.8l6-.9z" />,
   history: (
     <>

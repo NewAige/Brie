@@ -1,6 +1,6 @@
 ---
 title: Payment Deferral Explainer
-category: loan-servicing
+category: Loan Servicing
 tags: [loans, customer-facing, deferral]
 status: approved
 level: bank
