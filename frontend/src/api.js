@@ -84,6 +84,22 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ member }),
     }),
+  // `account` (optional): { email, password, full_name } to create a brand-new
+  // Gitea account before granting access. Omit it to grant an existing account.
+  addUser: (username, permission, account = null) =>
+    request('/api/admin/users', {
+      method: 'POST',
+      body: JSON.stringify({ username, permission, ...(account || {}) }),
+    }),
+  removeUser: (username) =>
+    request(`/api/admin/users/${encodeURIComponent(username)}`, {
+      method: 'DELETE',
+    }),
+  // Permanent: deletes the Gitea account itself (purges their forks/drafts).
+  deleteAccount: (username) =>
+    request(`/api/admin/users/${encodeURIComponent(username)}/account`, {
+      method: 'DELETE',
+    }),
 }
 
 // Encode each path segment but keep the slashes.

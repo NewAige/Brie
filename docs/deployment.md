@@ -86,12 +86,33 @@ Decide which AD groups map to approver vs. contributor vs. browser with the
 business owner (spec open question §11).
 
 **The in-app admin page** (`/admin`, visible to app role "Admin") lists
-everyone with repo access and can add/remove users on the `contributors`
-team. Two caveats:
+everyone with repo access. It can add a user — either **create a new Gitea
+account** or grant an existing one access to `prompt-library` as a Browser or
+Bank Approver — remove a user (revoke that access), and toggle
+`contributors`-team membership. Every call runs with the signed-in admin's own
+token, so Gitea enforces the real permission. Caveats:
 
-- Gitea only lets an **org owner** change team membership — a user who is
-  merely a repo admin will get Gitea's 403, which the page shows verbatim.
-  Make the intended app admins owners of the `bank` org.
+- The three operations need escalating Gitea rights: granting/revoking access
+  needs **repo admin** on `prompt-library`; changing `contributors`-team
+  membership needs **org owner**; **creating an account** needs a Gitea
+  **site (instance) administrator**. A signed-in admin who lacks the required
+  right gets Gitea's 403, shown verbatim. Note that app role "Admin" is only
+  repo-admin/org-owner — it is *not* automatically a Gitea site admin, so the
+  "Create a new Gitea account" path works only for admins who are also instance
+  administrators. Make the intended app admins owners of the `bank` org (and
+  instance admins too if they should create accounts).
+- Creating an account sets a temporary password with Gitea's
+  `must_change_password` on, so the user picks their own on first sign-in; the
+  account is then granted repo access in the same step. In an AD/LDAP-backed
+  deployment, prefer provisioning through AD and using the "grant existing
+  account" path — locally created accounts sit outside AD.
+- Two levels of removal: **Remove** revokes library access but keeps the Gitea
+  account (reversible, needs repo admin); **Delete account** permanently deletes
+  the account via `DELETE /admin/users/{username}?purge=true` — a Gitea
+  site-admin operation that also purges everything the account owns (their
+  drafts fork, comments) and **cannot be undone**. The page confirms before
+  deleting. Adding an account that already has access just resets its
+  permission.
 - Where the `contributors` team is populated by LDAP group sync (the setup
   above), the next sync **overwrites** manual changes made on the page. In
   that configuration treat the page as a read-only roster and manage
