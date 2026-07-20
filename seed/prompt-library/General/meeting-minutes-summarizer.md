@@ -1,6 +1,6 @@
 ---
 title: Meeting Minutes Summarizer
-category: internal-ops
+category: General
 tags: [internal, productivity, meetings]
 status: approved
 level: bank

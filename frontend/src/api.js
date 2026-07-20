@@ -32,8 +32,10 @@ export const api = {
   logout: () => request('/auth/logout', { method: 'POST' }),
   categories: () => request('/api/categories'),
   prompts: (params = {}) => {
+    // Drop empty/absent values, and `false` flags — an omitted boolean already
+    // means false to the backend, so this keeps the URL to the active filters.
     const qs = new URLSearchParams(
-      Object.entries(params).filter(([, v]) => v !== '' && v != null)
+      Object.entries(params).filter(([, v]) => v !== '' && v != null && v !== false)
     ).toString()
     return request(`/api/prompts${qs ? `?${qs}` : ''}`)
   },
@@ -48,6 +50,11 @@ export const api = {
     request(`/api/prompts/${encodePath(path)}/suggest`, {
       method: 'POST',
       body: JSON.stringify({ body, note }),
+    }),
+  // Mark / unmark a prompt for the signed-in user. Returns { favorited }.
+  setFavorite: (path, favorited) =>
+    request(`/api/prompts/${encodePath(path)}/favorite`, {
+      method: favorited ? 'PUT' : 'DELETE',
     }),
   logCopy: (path) => {
     // Fire-and-forget — a failed log must never break the copy itself.

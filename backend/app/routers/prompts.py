@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from .. import db, forks, gitea, prompt_index
+from ..categories import DEPARTMENTS
 from ..config import settings
 from ..deps import UserSession, current_session, require_contributor
 from ..frontmatter import parse_prompt, render_prompt, replace_body, split_front_matter
@@ -15,10 +16,11 @@ from ..paths import is_prompt_file, slugify
 router = APIRouter(prefix="/api", dependencies=[Depends(current_session)])
 
 
-def _public(prompt: dict, with_body: bool) -> dict:
+def _public(prompt: dict, with_body: bool, favorited: bool = False) -> dict:
     fields = ["path", "category", "title", "tags", "status", "level", "author",
               "owner", "copied_from", "target_model", "intended_use", "review_notes"]
     out = {k: prompt[k] for k in fields}
+    out["favorited"] = favorited
     if with_body:
         out["body"] = prompt["body"]
     return out
@@ -27,24 +29,37 @@ def _public(prompt: dict, with_body: bool) -> dict:
 @router.get("/categories")
 async def categories(session: UserSession = Depends(current_session)):
     prompts = await prompt_index.get_index(session.token)
-    counts: dict[str, int] = {}
+    counts: dict[str, int] = {name: 0 for name in DEPARTMENTS}
     for p in prompts:
         if p["status"] == "deprecated":
             continue
         counts[p["category"]] = counts.get(p["category"], 0) + 1
-    return [{"name": name, "count": counts[name]} for name in sorted(counts)]
+    names = DEPARTMENTS + sorted(name for name in counts if name not in DEPARTMENTS)
+    return [{"name": name, "count": counts[name]} for name in names]
 
 
 @router.get("/prompts")
 async def list_prompts(category: str = "", tag: str = "", q: str = "",
                        include_deprecated: bool = False,
+                       favorites: bool = False, mine: bool = False,
                        session: UserSession = Depends(current_session)):
+    """`favorites=true` narrows to prompts this user marked; `mine=true` to
+    prompts they wrote. Both are per-user views of the same library, so they
+    filter the shared index rather than querying a separate collection."""
     prompts = await prompt_index.get_index(session.token)
     query = q.strip().lower()
+    marked = db.favorite_paths(session.username)
     results = []
     for p in prompts:
         if p["status"] == "deprecated" and not include_deprecated:
             continue  # hidden from default browse, still reachable by direct link
+        if favorites and p["path"] not in marked:
+            continue
+        # Authored-by-me covers both fields: `author` is who wrote it, but a
+        # prompt handed over to a new maintainer should still show up for the
+        # person now responsible for it.
+        if mine and session.username not in (p["author"], p["owner"]):
+            continue
         if category and p["category"] != category:
             continue
         if tag and tag not in p["tags"]:
@@ -53,7 +68,7 @@ async def list_prompts(category: str = "", tag: str = "", q: str = "",
             haystack = " ".join([p["title"], " ".join(p["tags"]), p["body"]]).lower()
             if query not in haystack:
                 continue
-        results.append(_public(p, with_body=False))
+        results.append(_public(p, with_body=False, favorited=p["path"] in marked))
     return results
 
 
@@ -102,7 +117,9 @@ async def prompt_history(path: str, session: UserSession = Depends(current_sessi
 async def get_prompt(path: str, session: UserSession = Depends(current_session)):
     _require_valid_path(path)
     raw = await _fetch_file(session.token, path)
-    return _public(parse_prompt(path, raw["text"]), with_body=True)
+    favorited = path in db.favorite_paths(session.username)
+    return _public(parse_prompt(path, raw["text"]), with_body=True,
+                   favorited=favorited)
 
 
 class Suggestion(BaseModel):
@@ -153,8 +170,11 @@ async def create_prompt(new: NewPrompt,
                         session: UserSession = Depends(require_contributor)):
     """Create a brand-new prompt (from scratch, or "Make a copy" of an
     existing one) as a PR, through the same fork/branch chain as suggestions.
-    The path is derived server-side: <category-slug>/<title-slug>.md."""
-    category = slugify(new.category)
+    The path is derived server-side: <category-slug>/<title-slug>.md.
+    A category matching one of the fixed departments is used verbatim (so it
+    lands in the same folder as the seeded prompts for that department);
+    anything else is slugified, same as a title."""
+    category = new.category.strip() if new.category.strip() in DEPARTMENTS else slugify(new.category)
     slug = slugify(new.title)
     if not category or not slug:
         raise HTTPException(status_code=400,
@@ -179,9 +199,10 @@ async def create_prompt(new: NewPrompt,
         "category": category,
         "tags": tags,
         "status": "draft",
-        # User-created prompts are Community — owner-maintained after the
-        # first approval. An approver reviews this PR before it lands, so the
-        # level is itself approved, not self-granted.
+        # New prompts are always Community — the default publication level,
+        # owner-maintained from the moment they land. Bank is deliberately not
+        # offered here: only an approver may put a prompt in that tier, via
+        # the draft-publish flow (routers/drafts.py) or by raising it later.
         "level": "community",
         "author": session.username,
         "owner": session.username,
@@ -198,8 +219,26 @@ async def create_prompt(new: NewPrompt,
         pr_title=f"New prompt: {new.title.strip()}",
         pr_body=(new.intended_use or "New prompt.") + origin,
     )
-    return {"message": "Your new prompt has been sent for review.",
-            "id": pr["number"], "path": path}
+    return {"message": "Your prompt is ready to publish — open it under "
+                       "Suggestions and publish it to the library.",
+            "id": pr["number"], "path": path, "level": "community"}
+
+
+@router.put("/prompts/{path:path}/favorite")
+async def add_favorite(path: str, session: UserSession = Depends(current_session)):
+    """Mark a prompt to come back to later. Available to every role including
+    browsers — it changes nothing about the prompt, only the user's own view."""
+    _require_valid_path(path)
+    db.add_favorite(session.username, path)
+    return {"favorited": True}
+
+
+@router.delete("/prompts/{path:path}/favorite")
+async def remove_favorite(path: str, session: UserSession = Depends(current_session)):
+    # No path validation: a prompt deleted from the library leaves a stale row,
+    # and the user must still be able to clear it.
+    db.remove_favorite(session.username, path)
+    return {"favorited": False}
 
 
 class CopyEvent(BaseModel):

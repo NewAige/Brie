@@ -1,6 +1,6 @@
 ---
 title: Secure Message Reply Drafter
-category: customer-support
+category: Customer Support
 tags: [support, customer-facing, messaging]
 status: in-review
 level: bank

@@ -65,10 +65,12 @@ export default function Suggestions() {
             key={pr.id}
             pr={pr}
             canApprove={canApprove && pr.state === 'open'}
-            // A member may publish a change to a prompt they own, with no
-            // approver. The backend authorizes this; the flag only chooses
-            // which button and helper text to show.
-            canPublishAsOwner={!canApprove && pr.state === 'open' && !!pr.owner_mergeable}
+            // Anyone may publish a change to a prompt they own, with no
+            // approver — approvers included, for whom this is the only way to
+            // publish their own community prompt (Gitea refuses self-approval).
+            // Owner-publish wins over the approver button when both apply, so
+            // the label matches the path the backend will actually take.
+            canPublishAsOwner={pr.state === 'open' && !!pr.owner_mergeable}
             isPeerSuggestion={!!pr.needs_your_review}
             isOwn={pr.author === user.username}
             onMerged={() => setRefresh((n) => n + 1)}

@@ -86,9 +86,9 @@ def test_mixed_levels_denied():
     assert not result.allowed
 
 
-def test_new_file_denied_even_when_claiming_ownership():
-    """Not on main => None. Self-publishing a new prompt is authoring, not
-    ownership, however the front-matter reads."""
+def test_new_file_denied_when_author_unknown():
+    """Not on main => None. Without a PR author to match, a new file has no
+    trustworthy owner signal at all, so it goes to an approver."""
     assert not decide(UMA, [OWNED], {OWNED: None}, heads(OWNED)).allowed
 
 
@@ -176,6 +176,94 @@ def test_pr_author_defaults_empty():
     result = decide(UMA, [OWNED], {OWNED: community(UMA)}, heads(OWNED))
     assert result.allowed
     assert result.pr_author == ""
+
+
+# --- phase E: self-publishing a new community prompt ------------------------
+
+def owned_head(path: str, user: str) -> dict[str, str]:
+    return {path: user}
+
+
+def test_new_community_prompt_self_published_by_author():
+    """The phase-E case: publishing your own brand-new community prompt needs
+    no approver. Authorized on the PR author (a Gitea fact) plus a head that
+    names them as owner at community level."""
+    result = decide(UMA, [OWNED], {OWNED: None}, heads(OWNED),
+                    pr_author=UMA, owners_on_head=owned_head(OWNED, UMA))
+    assert result.allowed
+    assert result.paths == (OWNED,)
+
+
+def test_new_bank_prompt_not_self_publishable():
+    """Picking `bank` at publish time still buys a Bank Approver's review —
+    that is the whole point of the level."""
+    result = decide(UMA, [OWNED], {OWNED: None}, {OWNED: "bank"},
+                    pr_author=UMA, owners_on_head=owned_head(OWNED, UMA))
+    assert not result.allowed
+    assert "not community" in result.reason
+
+
+def test_new_prompt_naming_someone_else_as_owner_denied():
+    """The forged-owner attack on the new-file path: the author cannot mint a
+    prompt owned by someone else and merge it themselves."""
+    result = decide(UMA, [OWNED], {OWNED: None}, heads(OWNED),
+                    pr_author=UMA, owners_on_head=owned_head(OWNED, ADAM))
+    assert not result.allowed
+    assert "not owned by" in result.reason
+
+
+def test_new_prompt_merged_by_non_author_denied():
+    """A brand-new prompt has no established owner, so nobody but its author
+    can self-publish it — a peer's new prompt goes to an approver."""
+    result = decide(ADAM, [OWNED], {OWNED: None}, heads(OWNED),
+                    pr_author=UMA, owners_on_head=owned_head(OWNED, UMA))
+    assert not result.allowed
+    assert "another author" in result.reason
+
+
+def test_new_prompt_missing_head_owner_denied():
+    """No owner readable on the head (absent, malformed) => denied."""
+    assert not decide(UMA, [OWNED], {OWNED: None}, heads(OWNED),
+                      pr_author=UMA, owners_on_head={}).allowed
+    assert not decide(UMA, [OWNED], {OWNED: None}, heads(OWNED),
+                      pr_author=UMA, owners_on_head={OWNED: ""}).allowed
+
+
+def test_new_prompt_still_path_checked():
+    """Self-publish does not bypass the prompt-path rules."""
+    for path in ("_templates/prompt-template.md", "README.md", "../escape.md"):
+        assert not decide(UMA, [path], {path: None}, heads(path),
+                          pr_author=UMA,
+                          owners_on_head=owned_head(path, UMA)).allowed, path
+
+
+def test_existing_file_ignores_head_owner():
+    """The load-bearing invariant: for a file that EXISTS on main, the head's
+    `owner` is never consulted. A PR rewriting `owner: uma` on Adam's prompt
+    stays denied even though the head now claims Uma."""
+    result = decide(UMA, [OWNED], {OWNED: community(ADAM)}, heads(OWNED),
+                    pr_author=UMA, owners_on_head=owned_head(OWNED, UMA))
+    assert not result.allowed
+    assert "owned by" in result.reason
+
+
+def test_new_and_owned_files_together_allowed():
+    """A PR adding a new community prompt alongside an edit to one the author
+    already owns is publishable as a whole."""
+    result = decide(UMA, [OWNED, OTHER],
+                    {OWNED: community(UMA), OTHER: None},
+                    heads(OWNED, OTHER), pr_author=UMA,
+                    owners_on_head={OWNED: UMA, OTHER: UMA})
+    assert result.allowed
+
+
+def test_new_file_mixed_with_someone_elses_denied():
+    """No partial merge: one unpublishable path denies the PR whole."""
+    result = decide(UMA, [OWNED, OTHER],
+                    {OWNED: community(ADAM), OTHER: None},
+                    heads(OWNED, OTHER), pr_author=UMA,
+                    owners_on_head={OWNED: UMA, OTHER: UMA})
+    assert not result.allowed
 
 
 # --- owner_of ---------------------------------------------------------------

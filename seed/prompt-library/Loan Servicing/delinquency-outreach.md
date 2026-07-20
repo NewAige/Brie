@@ -1,6 +1,6 @@
 ---
 title: Delinquency Outreach Letter
-category: loan-servicing
+category: Loan Servicing
 tags: [loans, collections, letters]
 status: approved
 level: bank

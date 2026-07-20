@@ -44,6 +44,10 @@
   --purple-bg: #f3edfb;
   --purple-border: #e0d2f3;
   --gray-bg: #edf0f5;
+  /* Favourite star. Warmer and lighter than --amber, which is tuned for text
+     on --amber-bg; this one has to read as a filled shape on white. */
+  --star: #d99106;
+  --star-strong: #a86c02;
 
   /* Type & shape */
   --font: "Source Sans 3", "Source Sans Pro", -apple-system, BlinkMacSystemFont,
@@ -338,6 +342,17 @@ a:hover { text-decoration: underline; }
   box-shadow: var(--shadow-xs);
   transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
 }
+/* Inside the toolbar the search is the primary field: it takes the free space,
+   squares off to match the selects, and drops its own shadow since the
+   toolbar card already provides the elevation. */
+.toolbar .search-wrap { flex: 1 1 16rem; min-width: 11rem; width: auto; }
+.toolbar .search {
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  padding-top: 0.42rem;
+  padding-bottom: 0.42rem;
+  font-size: 0.94rem;
+}
 .search::placeholder { color: var(--muted); }
 .search:focus {
   outline: none;
@@ -345,8 +360,97 @@ a:hover { text-decoration: underline; }
   box-shadow: 0 0 0 3px rgba(0, 111, 81, 0.18);
 }
 
-.filter-row { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-bottom: 1rem; align-items: center; }
-.result-count { margin: 0.25rem 0 0.9rem; }
+/* Library filter toolbar — one compact row: selects, view toggles, count. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.75rem;
+  margin-bottom: 1.1rem;
+  box-shadow: var(--shadow-xs);
+}
+.toolbar-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 0.15rem 0.35rem;
+  background: var(--border);
+}
+.toolbar-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  padding-right: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+/* Everything except the search holds its natural width; the search absorbs
+   the slack so the row stays one line on desktop. */
+.toolbar > *:not(.search-wrap) { flex-shrink: 0; }
+
+.select-wrap { position: relative; display: inline-flex; align-items: center; }
+.select-wrap .icon {
+  position: absolute;
+  right: 0.7rem;
+  color: var(--muted);
+  pointer-events: none;
+}
+.select-control {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0.42rem 2.1rem 0.42rem 0.8rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+  max-width: 15rem;
+  text-overflow: ellipsis;
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease), color 0.15s var(--ease);
+}
+.select-control:hover { border-color: var(--muted); color: var(--text); }
+.select-control:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 111, 81, 0.18);
+}
+
+/* Quiet toggle buttons (Favourites / Written by me). */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.42rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background 0.15s var(--ease), color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.toggle:hover { background: var(--gray-bg); color: var(--text); }
+.toggle-on { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent-strong); }
+.toggle-on:hover { background: var(--accent-soft); color: var(--accent-strong); }
+.toggle-clear { color: var(--muted); font-size: 0.85rem; }
+.toggle-clear:hover { color: var(--red); background: var(--red-bg); }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 .muted { color: var(--muted); }
 .small { font-size: 0.85rem; }
 
@@ -405,6 +509,36 @@ a:hover { text-decoration: underline; }
 .tag-static { cursor: default; }
 .tag-static:hover { color: var(--text-secondary); border-color: var(--border); background: var(--surface-sunken); }
 .tags { display: inline-flex; flex-wrap: wrap; gap: 0.35rem; }
+
+/* ------------------------------------------------------------- Favourites */
+/* Two variants: a bare star on cards, and a labelled .btn on the prompt page.
+   The chrome-stripping below is scoped to :not(.btn) — unscoped it would sit
+   after .btn in the cascade at equal specificity and flatten the large
+   variant into borderless text. */
+.fav-btn {
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  position: relative;
+  z-index: 1;   /* above the card title's ::after overlay (cf. .card-foot .tag) */
+  border-radius: var(--radius-sm);
+}
+.fav-btn:not(.btn) {
+  padding: 0.12rem;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  /* .btn brings its own richer transition; only the bare star needs this. */
+  transition: color 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.fav-btn:not(.btn):hover { color: var(--star); transform: scale(1.12); }
+.fav-btn:not(.btn).fav-btn-on { color: var(--star); }
+.fav-btn:not(.btn).fav-btn-on:hover { color: var(--star-strong); }
+/* Large variant: keeps .btn's box, overrides only the colour. */
+.fav-btn.btn.fav-btn-on { border-color: var(--star); color: var(--star-strong); }
+.fav-btn.btn.fav-btn-on:hover { border-color: var(--star-strong); }
 
 /* ----------------------------------------------------------------- Cards */
 .card {
@@ -720,6 +854,17 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ------------------------------------------------------------ Responsive */
+/* Below this the filter toolbar can't hold one line: wrap it deliberately,
+   with the search on its own full-width row above the filters. */
+@media (max-width: 1000px) {
+  .toolbar { flex-wrap: wrap; }
+  .toolbar .search-wrap { flex-basis: 100%; }
+  .toolbar > .toolbar-divider:first-of-type { display: none; }
+  /* Keep the count beside the filters instead of letting auto-margin push it
+     onto a third line of its own. */
+  .toolbar-count { margin-left: 0.35rem; }
+}
+
 @media (max-width: 860px) {
   .topbar-inner { flex-wrap: wrap; gap: 0.6rem 1rem; padding: 0.6rem 1rem; }
   .nav { order: 3; flex-basis: 100%; overflow-x: auto; padding-bottom: 0.15rem; }

@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom'
 import StatusBadge from './StatusBadge.jsx'
 import LevelBadge from './LevelBadge.jsx'
 import Icon from './Icon.jsx'
+import FavoriteButton from './FavoriteButton.jsx'
 
-// The title's ::after overlay makes the whole card clickable; tags sit above
-// it (z-index) so they stay independently clickable.
-export default function PromptCard({ prompt, onTagClick }) {
+// The title's ::after overlay makes the whole card clickable; tags and the
+// favourite star sit above it (z-index) so they stay independently clickable.
+export default function PromptCard({ prompt, onTagClick, onFavoriteChange }) {
   return (
     <div className={`card prompt-card ${prompt.status !== 'approved' ? 'card-muted' : ''}`}>
       <div className="card-head">
@@ -16,6 +17,11 @@ export default function PromptCard({ prompt, onTagClick }) {
         <span className="card-badges">
           <LevelBadge level={prompt.level} owner={prompt.owner} compact />
           <StatusBadge status={prompt.status} />
+          <FavoriteButton
+            path={prompt.path}
+            favorited={prompt.favorited}
+            onChange={onFavoriteChange}
+          />
         </span>
       </div>
       {prompt.intended_use && <p className="card-sub">{prompt.intended_use}</p>}

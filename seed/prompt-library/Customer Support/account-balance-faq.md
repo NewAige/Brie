@@ -1,6 +1,6 @@
 ---
 title: Account Balance FAQ Answers
-category: customer-support
+category: Customer Support
 tags: [support, customer-facing, faq]
 status: approved
 level: bank

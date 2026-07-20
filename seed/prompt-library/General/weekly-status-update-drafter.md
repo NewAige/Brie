@@ -1,6 +1,6 @@
 ---
 title: Weekly Status Update Drafter
-category: internal-ops
+category: General
 tags: [internal, status-updates, writing]
 status: approved
 level: community

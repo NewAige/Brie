@@ -1,6 +1,6 @@
 ---
 title: Legacy Report Formatter
-category: internal-ops
+category: General
 tags: [internal, reporting]
 status: deprecated
 level: bank

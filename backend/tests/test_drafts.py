@@ -371,13 +371,39 @@ def test_publish_renders_chosen_level(fake, make_client):
     assert content.endswith("Write a calm escalation email.\n")
 
 
-def test_publish_bank_level(fake, make_client):
+def test_publish_bank_level_by_approver(fake, make_client):
+    """Bank is still reachable — by someone who may actually grant it."""
     fake.draft_files[DRAFT_PATH] = DRAFT_CONTENT
-    with make_client() as client:
+    with make_client("approver") as client:
         resp = client.post(f"/api/drafts/{DRAFT_PATH}/publish", json={"level": "bank"})
     assert resp.status_code == 200
     committed = [j for m, p, j in fake.writes if j.get("new_branch")]
     assert "level: bank" in base64.b64decode(committed[-1]["content"]).decode()
+
+
+def test_publish_bank_level_forbidden_for_contributor(fake, make_client):
+    """Only a Bank Approver may put a prompt in the Bank tier. A contributor
+    asking for it is refused outright — never silently downgraded, so nobody
+    believes they published to Bank when they did not."""
+    fake.draft_files[DRAFT_PATH] = DRAFT_CONTENT
+    with make_client() as client:
+        resp = client.post(f"/api/drafts/{DRAFT_PATH}/publish", json={"level": "bank"})
+    assert resp.status_code == 403
+    assert "Bank Approver" in resp.json()["detail"]
+    assert not [j for m, p, j in fake.writes if j.get("new_branch")], \
+        "a refused bank publish must not commit anything"
+
+
+def test_publish_defaults_to_community(fake, make_client):
+    """Community is the default publication level: omitting `level` entirely
+    publishes to Community rather than 422-ing."""
+    fake.draft_files[DRAFT_PATH] = DRAFT_CONTENT
+    with make_client() as client:
+        resp = client.post(f"/api/drafts/{DRAFT_PATH}/publish", json={})
+    assert resp.status_code == 200
+    assert resp.json()["level"] == "community"
+    committed = [j for m, p, j in fake.writes if j.get("new_branch")]
+    assert "level: community" in base64.b64decode(committed[-1]["content"]).decode()
 
 
 def test_publish_rejects_junk_level(fake, make_client):

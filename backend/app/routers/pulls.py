@@ -41,16 +41,6 @@ def _pr_summary(pr: dict) -> dict:
     }
 
 
-async def _can_approve(session: UserSession) -> bool:
-    """Does this user have real write access on the repo? Asked of Gitea, never
-    stored — same rule as /api/me."""
-    try:
-        repo = await gitea.api(session.token, "GET", settings.repo_api)
-    except HTTPException:
-        return False
-    return bool((repo.get("permissions") or {}).get("push"))
-
-
 @router.get("/pulls")
 async def list_pulls(state: str = "open",
                      session: UserSession = Depends(current_session)):
@@ -62,12 +52,13 @@ async def list_pulls(state: str = "open",
 
     # Annotate open PRs the viewer may publish as owner, so the list can offer
     # "Publish" instead of "Approve & publish". Advisory only — the merge
-    # endpoint re-checks. Skipped entirely for approvers, who already have the
-    # button, and when no service account is configured.
+    # endpoint re-checks. Computed for approvers too: they take the owner path
+    # for their own community prompts (see merge_pull), so skipping them here
+    # would label a self-publish "Approve & publish".
     #
     # `needs_your_review` marks the phase-C peer case: someone else's
     # suggestion to a prompt this viewer owns, which only they can publish.
-    if settings.owner_merge_enabled and not await _can_approve(session):
+    if settings.owner_merge_enabled:
         for summary in summaries:
             if summary["state"] != "open":
                 continue
@@ -94,8 +85,18 @@ async def merge_pull(pr_id: int, session: UserSession = Depends(current_session)
     A member with no write access gets the owner-merge path if — and only if —
     they own every file the PR touches.
     """
-    if settings.owner_merge_enabled and not await _can_approve(session):
+    if settings.owner_merge_enabled:
         # Authoritative check, run now rather than trusting the list response.
+        #
+        # Tried for EVERY user, approvers included. Owner-merge was originally
+        # reserved for members without push access, on the assumption that an
+        # approver never needs it — but that left approvers unable to publish
+        # their own community prompts at all: Gitea refuses self-approval, and
+        # branch protection requires one, so the fall-through below always
+        # failed. Ownership is a property of the prompt, not of the merger's
+        # Gitea permissions, so the check applies to everyone and `decide` is
+        # unchanged: bank prompts and prompts you don't own are still refused
+        # here and still go to a second approver.
         decision = await ownership.owner_mergeable(
             session.token, session.username, pr_id)
         if decision.allowed:

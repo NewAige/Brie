@@ -1,6 +1,6 @@
 ---
 title: Product Blurb Rewriter
-category: marketing
+category: Marketing
 tags: [marketing, internal, copywriting]
 status: draft
 level: bank

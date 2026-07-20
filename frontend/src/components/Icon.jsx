@@ -60,6 +60,9 @@ const PATHS = {
     </>
   ),
   chevron: <path d="m9 6 6 6-6 6" />,
+  'chevron-down': <path d="m6 9.5 6 6 6-6" />,
+  close: <path d="M6 6l12 12M18 6 6 18" />,
+  star: <path d="m12 3.4 2.7 5.5 6 .9-4.35 4.25 1.03 6-5.38-2.83-5.38 2.83 1.03-6L3.3 9.8l6-.9z" />,
   history: (
     <>
       <path d="M4 12a8 8 0 1 0 2.3-5.6L4 8.7" />
@@ -80,7 +83,9 @@ const PATHS = {
   ),
 }
 
-export default function Icon({ name, size = 18, className = '' }) {
+// `filled` paints the shape in the current colour instead of outlining it —
+// used by the star to show a prompt is marked without swapping in a second path.
+export default function Icon({ name, size = 18, className = '', filled = false }) {
   const path = PATHS[name]
   if (!path) return null
   return (
@@ -89,7 +94,7 @@ export default function Icon({ name, size = 18, className = '' }) {
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      fill="none"
+      fill={filled ? 'currentColor' : 'none'}
       stroke="currentColor"
       strokeWidth="1.8"
       strokeLinecap="round"
