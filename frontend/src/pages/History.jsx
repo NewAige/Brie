@@ -17,7 +17,7 @@ export default function History() {
       <h1>History</h1>
       <p className="muted">Every published change to this prompt: who, when, and what.</p>
 
-      {loading && <div className="muted">Loading…</div>}
+      {loading && <div className="spinner-row"><span className="spinner" /> Loading…</div>}
       {error && <div className="alert alert-error">{error}</div>}
 
       <CommitHistory commits={data} />

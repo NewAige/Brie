@@ -28,7 +28,7 @@ export default function AdminUsers() {
   const [newPassword, setNewPassword] = useState('')
 
   if (user.role !== 'admin') return <div className="empty">Admins only.</div>
-  if (loading) return <div className="muted">Loading…</div>
+  if (loading) return <div className="spinner-row"><span className="spinner" /> Loading…</div>
   if (error) return <div className="alert alert-error">{error}</div>
 
   const reload = () => setReloadKey((k) => k + 1)
@@ -122,7 +122,7 @@ export default function AdminUsers() {
   return (
     <div>
       <h1>Users</h1>
-      <p className="muted">
+      <p className="muted page-intro">
         Roles come live from Gitea. Here you can add a user — either create a
         brand-new Gitea account or grant an existing one access to the library —
         remove a user (revoke that access), and change one role directly:

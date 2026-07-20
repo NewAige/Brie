@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAsyncData } from '../hooks.js'
 import { api } from '../api.js'
 import CommitHistory from '../components/CommitHistory.jsx'
+import Icon from '../components/Icon.jsx'
 
 // Personal drafts (phase D): stored in the user's own Gitea fork, visible
 // only to them until they publish. Everything here talks to /api/drafts —
@@ -17,19 +18,23 @@ export default function Drafts() {
     <div>
       <div className="page-head">
         <h1>My drafts</h1>
-        <Link className="btn btn-primary" to="/new">New prompt</Link>
+        <Link className="btn btn-primary" to="/new"><Icon name="plus" size={16} /> New prompt</Link>
       </div>
-      <p className="muted">
+      <p className="muted page-intro">
         Drafts are private to you — they save instantly, without review.
         Publishing sends a draft to the library&apos;s review flow.
       </p>
 
-      {loading && <div className="muted">Loading…</div>}
+      {loading && <div className="spinner-row"><span className="spinner" /> Loading…</div>}
       {error && <div className="alert alert-error">{error}</div>}
       {data && data.length === 0 && (
         <div className="empty">
-          No drafts yet. Start one from <Link to="/new">New prompt</Link> with
-          “Save as personal draft”.
+          <Icon name="edit" />
+          <strong>No drafts yet</strong>
+          <span>
+            Start one from <Link to="/new">New prompt</Link> with
+            “Save as personal draft”.
+          </span>
         </div>
       )}
 
@@ -119,25 +124,29 @@ function DraftItem({ draft, onChanged }) {
           />
 
           {publishing && (
-            <div className="card">
+            <div className="card publish-card">
               <div className="field-label">Publish at which level?</div>
-              <label style={{ display: 'block', marginBottom: 6 }}>
+              <label className="publish-option">
                 <input
                   type="radio"
                   name={`level-${draft.path}`}
                   checked={level === 'community'}
                   onChange={() => setLevel('community')}
-                />{' '}
-                <strong>Community</strong> — you maintain it after the first approval.
+                />
+                <span>
+                  <strong>Community</strong> — you maintain it after the first approval.
+                </span>
               </label>
-              <label style={{ display: 'block', marginBottom: 6 }}>
+              <label className="publish-option">
                 <input
                   type="radio"
                   name={`level-${draft.path}`}
                   checked={level === 'bank'}
                   onChange={() => setLevel('bank')}
-                />{' '}
-                <strong>Bank</strong> — every future change needs a Bank Approver.
+                />
+                <span>
+                  <strong>Bank</strong> — every future change needs a Bank Approver.
+                </span>
               </label>
               <div className="editor-actions">
                 <button className="btn btn-primary" onClick={publish} disabled={busy}>

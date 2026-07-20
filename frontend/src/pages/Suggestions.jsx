@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useAsyncData, useUser } from '../hooks.js'
 import { api } from '../api.js'
 import DiffView from '../components/DiffView.jsx'
+import Icon from '../components/Icon.jsx'
 
 export default function Suggestions() {
   const user = useUser()
@@ -44,11 +45,17 @@ export default function Suggestions() {
         </p>
       )}
 
-      {loading && <div className="muted">Loading…</div>}
+      {loading && <div className="spinner-row"><span className="spinner" /> Loading…</div>}
       {error && <div className="alert alert-error">{error}</div>}
       {shown && shown.length === 0 && (
         <div className="empty">
-          {tab === 'open' ? 'No suggestions waiting for review.' : 'No decided suggestions yet.'}
+          <Icon name="inbox" />
+          <strong>{tab === 'open' ? 'All caught up' : 'Nothing decided yet'}</strong>
+          <span>
+            {tab === 'open'
+              ? 'No suggestions are waiting for review.'
+              : 'Approved and declined suggestions will appear here.'}
+          </span>
         </div>
       )}
 
@@ -124,7 +131,9 @@ function SuggestionItem({ pr, canApprove, canPublishAsOwner, isPeerSuggestion, i
       {open && (
         <div className="history-diff">
           {pr.note && <p className="history-note"><strong>Note:</strong> {pr.note}</p>}
-          {diff === null ? <div className="muted small">Loading change…</div> : <DiffView diff={diff} />}
+          {diff === null
+            ? <div className="spinner-row small"><span className="spinner" /> Loading change…</div>
+            : <DiffView diff={diff} />}
           {error && <div className="alert alert-error">{error}</div>}
           {done && <div className="alert alert-success">{done}</div>}
           {(canApprove || canPublishAsOwner) && !done && (
