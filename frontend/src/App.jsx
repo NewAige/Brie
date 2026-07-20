@@ -12,6 +12,7 @@ import NewPrompt from './pages/NewPrompt.jsx'
 import PromptDetail from './pages/PromptDetail.jsx'
 import Suggestions from './pages/Suggestions.jsx'
 import Icon from './components/Icon.jsx'
+import Logo from './components/Logo.jsx'
 
 const ROLE_LABELS = {
   browser: 'Browser',
@@ -60,7 +61,7 @@ export default function App() {
         <header className="topbar">
           <div className="topbar-inner">
             <NavLink to="/" className="brand">
-              <span className="brand-mark">¶</span> Prompt Library
+              <Logo size={30} className="brand-logo" /> Brie
             </NavLink>
             <nav className="nav">
               <NavLink to="/" end><Icon name="folder" size={16} /> Library</NavLink>
