@@ -1,13 +1,16 @@
 import React from 'react'
 import Icon from '../components/Icon.jsx'
+import Logo from '../components/Logo.jsx'
 
 export default function Login() {
   const error = new URLSearchParams(window.location.search).get('error')
   return (
     <div className="login-screen">
       <div className="login-card">
-        <div className="brand brand-large">
-          <span className="brand-mark">¶</span> Prompt Library
+        <div className="brand brand-large brand-stacked">
+          <Logo size={72} className="brand-logo" />
+          <span className="brand-name">Brie</span>
+          <span className="brand-tagline">Prompt Library</span>
         </div>
         <p className="muted login-tagline">
           Your team&apos;s approved AI prompts — searchable, copyable, and

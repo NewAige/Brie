@@ -146,20 +146,28 @@ a:hover { text-decoration: underline; }
 }
 .brand:hover { text-decoration: none; }
 .brand-large { font-size: 1.45rem; justify-content: center; }
-.brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  background: linear-gradient(135deg, var(--accent) 0%, var(--navy-700) 100%);
-  color: #fff;
-  font-size: 1.05rem;
-  font-weight: 700;
-  box-shadow: 0 2px 6px rgba(0, 86, 62, 0.35);
+.brand-logo { display: block; flex-shrink: 0; }
+.brand-stacked {
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-bottom: 0.35rem;
 }
-.brand-large .brand-mark { width: 42px; height: 42px; border-radius: 12px; font-size: 1.35rem; }
+.brand-name {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #20333f;
+  line-height: 1;
+}
+.brand-tagline {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--accent);
+  line-height: 1;
+}
 
 .nav { display: flex; gap: 0.25rem; flex: 1; }
 .nav a {
