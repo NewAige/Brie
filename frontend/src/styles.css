@@ -188,5 +188,11 @@ a:hover { text-decoration: underline; }
 .admin-user-row { flex-direction: row; align-items: center; gap: 0.7rem; padding: 0.55rem 0; border-bottom: 1px solid var(--border); }
 .admin-users .admin-user-row:last-child { border-bottom: none; }
 .admin-user-name { flex: 1; font-weight: 550; }
+.admin-remove { color: var(--red, #b3261e); }
+.admin-remove:hover:not(:disabled) { color: var(--red, #b3261e); border-color: var(--red, #b3261e); }
+.admin-add { display: flex; flex-direction: column; gap: 0.5rem; }
+.admin-add-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.admin-add-row .editor-note { margin: 0; }
+.admin-add-row input.editor-note { flex: 1; min-width: 12rem; }
 
 .tabs { display: flex; gap: 0.4rem; }

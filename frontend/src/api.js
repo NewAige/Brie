@@ -83,6 +83,15 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ member }),
     }),
+  addUser: (username, permission) =>
+    request('/api/admin/users', {
+      method: 'POST',
+      body: JSON.stringify({ username, permission }),
+    }),
+  removeUser: (username) =>
+    request(`/api/admin/users/${encodeURIComponent(username)}`, {
+      method: 'DELETE',
+    }),
 }
 
 // Encode each path segment but keep the slashes.

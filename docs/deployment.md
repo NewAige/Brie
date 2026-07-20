@@ -86,12 +86,20 @@ Decide which AD groups map to approver vs. contributor vs. browser with the
 business owner (spec open question §11).
 
 **The in-app admin page** (`/admin`, visible to app role "Admin") lists
-everyone with repo access and can add/remove users on the `contributors`
-team. Two caveats:
+everyone with repo access. It can add a user (grant an existing Gitea
+account access to `prompt-library` as a Browser or Bank Approver), remove a
+user (revoke that access — the Gitea account itself is untouched), and toggle
+`contributors`-team membership. Every call runs with the signed-in admin's own
+token, so Gitea enforces the real permission. Three caveats:
 
-- Gitea only lets an **org owner** change team membership — a user who is
-  merely a repo admin will get Gitea's 403, which the page shows verbatim.
-  Make the intended app admins owners of the `bank` org.
+- Adding or removing a user needs **repo admin** rights on `prompt-library`;
+  changing `contributors`-team membership needs **org owner** rights. A user
+  who lacks the required right gets Gitea's 403, which the page shows verbatim.
+  Make the intended app admins owners of the `bank` org (owner implies both).
+- "Add a user" only grants access to an account that already **exists** in
+  Gitea; it does not create accounts, and "remove" does not delete them —
+  account lifecycle stays with Gitea/AD. Adding an account already present just
+  resets its permission.
 - Where the `contributors` team is populated by LDAP group sync (the setup
   above), the next sync **overwrites** manual changes made on the page. In
   that configuration treat the page as a read-only roster and manage

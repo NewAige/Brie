@@ -1,15 +1,22 @@
 """Minimal admin surface (PLAN.MD phase E).
 
-One job: see who has which role, and toggle Contributor-ness (= membership in
-the org's `contributors` team). Everything else about roles stays in Gitea/AD.
+See who has which role; toggle Contributor-ness (= membership in the org's
+`contributors` team); and add or remove who has access to the library repo at
+all. Everything else about roles stays in Gitea/AD.
+
+"Add a user" here means granting an existing Gitea account access to the
+library repo as a direct collaborator (Browser by default, promotable from
+there); "remove a user" means revoking that access — not deleting the Gitea
+account, whose lifecycle stays in Gitea/AD.
 
 Every call here uses the ADMIN'S OWN token, never the bot: the bot's scope is
-deliberately limited to repository writes (ownership.py), and team management
-is exactly the kind of power it must not hold. A consequence the docs spell
-out: Gitea requires **org owner** rights to change team membership, which a
-plain repo-admin may lack — Gitea's 403 is surfaced verbatim so the admin
-sees the real reason. In production, LDAP team sync overwrites manual
-assignment on its next run, making this page advisory there.
+deliberately limited to repository writes (ownership.py), and user/team
+management is exactly the kind of power it must not hold. Two consequences the
+docs spell out: adding or removing a collaborator needs repo **admin** rights,
+and changing team membership needs **org owner** rights, which a plain
+repo-admin may lack — Gitea's 403 is surfaced verbatim so the admin sees the
+real reason. In production, LDAP team sync overwrites manual assignment on its
+next run, making the contributor toggle advisory there.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -26,6 +33,12 @@ router = APIRouter(prefix="/api/admin")
 # for non-team-members. Mirrors roles.derive_role's ordering: admin > write
 # (approver) > read. Team membership upgrades "read" to contributor below.
 _PERMISSION_ROLES = {"admin": "admin", "write": "approver", "read": "browser"}
+
+# Repo permissions an admin may hand out when adding a user. We expose only the
+# two that map to a role this page understands — `read` (Browser, then
+# promotable to Contributor with the toggle below) and `write` (Bank Approver).
+# Granting `admin` (repo-owner power) stays a deliberate Gitea-side action.
+_GRANTABLE_ROLES = {"read": "Browser", "write": "Bank Approver"}
 
 
 @router.get("/users")
@@ -86,6 +99,82 @@ async def set_contributor(username: str, update: ContributorUpdate,
     return {"message": f"{username} {verb} the contributors team. "
                        "Their role updates on their next sign-in or within a minute.",
             "username": username, "contributor": update.member}
+
+
+class AddUser(BaseModel):
+    username: str
+    permission: str = "read"  # "read" -> Browser, "write" -> Bank Approver
+
+
+@router.post("/users")
+async def add_user(payload: AddUser, session: UserSession = Depends(require_admin)):
+    """Give an existing Gitea account access to the library repo as a direct
+    collaborator, so it appears in the roster with a real role.
+
+    `read` lands them as a Browser (promotable to Contributor with the toggle
+    above); `write` makes them a Bank Approver. Repo-admin (owner) power is not
+    grantable here. Gitea enforces the rest as the admin: they need repo-admin
+    rights, and the username must exist — Gitea's 403/404 pass through verbatim.
+    """
+    username = payload.username.strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="A username is required.")
+    if payload.permission not in _GRANTABLE_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail="permission must be 'read' (Browser) or 'write' (Bank Approver).")
+    if username == settings.bot_username:
+        raise HTTPException(
+            status_code=400,
+            detail="The service account is managed by the server, not here.")
+
+    # PUT is create-or-update: adding someone who already has access just resets
+    # their permission, which is a reasonable "fix their access" action too.
+    await gitea.api(session.token, "PUT",
+                    f"{settings.repo_api}/collaborators/{username}",
+                    json={"permission": payload.permission})
+    role = _PERMISSION_ROLES[payload.permission]
+    return {"message": f"{username} now has access to the library as a "
+                       f"{_GRANTABLE_ROLES[payload.permission]}.",
+            "username": username, "role": role}
+
+
+@router.delete("/users/{username}")
+async def remove_user(username: str,
+                      session: UserSession = Depends(require_admin)):
+    """Revoke a user's access to the library: drop them from the contributors
+    team (if a member) and remove their direct collaborator grant.
+
+    This removes access, not the Gitea account — account lifecycle stays in
+    Gitea/AD. A user whose access comes only from an LDAP-synced team reappears
+    on the team's next sync (the page is advisory there). Team removal needs
+    org-owner rights and 403s verbatim otherwise; it runs first so that a
+    non-owner admin's request fails cleanly instead of half-revoking.
+    """
+    if username == settings.bot_username:
+        raise HTTPException(status_code=400,
+                            detail="The service account cannot be removed here.")
+    if username == session.username:
+        raise HTTPException(status_code=400,
+                            detail="You can't remove your own access.")
+
+    team = await _find_team(session.token)
+    in_team = bool(team) and \
+        username in await _team_member_names(session.token, team)
+    if in_team:
+        await gitea.api(session.token, "DELETE",
+                        f"/teams/{team['id']}/members/{username}")
+
+    try:
+        await gitea.api(session.token, "DELETE",
+                        f"{settings.repo_api}/collaborators/{username}")
+    except HTTPException as exc:
+        # 404 = no direct grant (a team-only user); the team removal above was
+        # the real revoke, so this is success. Anything else is a real error.
+        if exc.status_code != 404:
+            raise
+    return {"message": f"{username} no longer has access to the library.",
+            "username": username}
 
 
 # --- helpers ----------------------------------------------------------------
