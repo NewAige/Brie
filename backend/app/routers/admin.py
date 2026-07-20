@@ -104,17 +104,35 @@ async def set_contributor(username: str, update: ContributorUpdate,
 class AddUser(BaseModel):
     username: str
     permission: str = "read"  # "read" -> Browser, "write" -> Bank Approver
+    # When `email` and `password` are both given, a brand-new Gitea account is
+    # created first (needs a Gitea SITE-ADMIN token); otherwise the username is
+    # assumed to already exist and is only granted access.
+    email: str | None = None
+    password: str | None = None
+    full_name: str | None = None
+    # Gitea's own flag: force a password change on first sign-in. On by default
+    # so the admin-chosen password is only ever a one-time handoff.
+    must_change_password: bool = True
 
 
 @router.post("/users")
 async def add_user(payload: AddUser, session: UserSession = Depends(require_admin)):
-    """Give an existing Gitea account access to the library repo as a direct
-    collaborator, so it appears in the roster with a real role.
+    """Add a user to the library, optionally creating their Gitea account first.
 
-    `read` lands them as a Browser (promotable to Contributor with the toggle
-    above); `write` makes them a Bank Approver. Repo-admin (owner) power is not
-    grantable here. Gitea enforces the rest as the admin: they need repo-admin
-    rights, and the username must exist — Gitea's 403/404 pass through verbatim.
+    Two modes, both ending in a collaborator grant so the user appears in the
+    roster with a real role (`read` -> Browser, promotable to Contributor with
+    the toggle above; `write` -> Bank Approver; repo-owner is not grantable):
+
+    - **Create + grant** — when `email` and `password` are supplied, first
+      `POST /admin/users` to create the account. This is a Gitea *site-admin*
+      operation: an app-admin who is only a repo admin / org owner gets Gitea's
+      403, surfaced verbatim. On success the account exists and is granted access.
+    - **Grant existing** — with no email/password, only the collaborator grant
+      runs, for an account that already exists (e.g. AD-provisioned).
+
+    Everything runs as the admin's own token, so Gitea enforces the real
+    permission and its errors (403 not-site-admin, 422 user-exists, …) pass
+    through unchanged.
     """
     username = payload.username.strip()
     if not username:
@@ -128,15 +146,37 @@ async def add_user(payload: AddUser, session: UserSession = Depends(require_admi
             status_code=400,
             detail="The service account is managed by the server, not here.")
 
-    # PUT is create-or-update: adding someone who already has access just resets
-    # their permission, which is a reasonable "fix their access" action too.
+    email = (payload.email or "").strip()
+    password = payload.password or ""
+    creating = bool(email or password)
+    if creating and not (email and password):
+        raise HTTPException(
+            status_code=400,
+            detail="Creating a new account needs both an email and a password.")
+
+    if creating:
+        await gitea.api(session.token, "POST", "/admin/users", json={
+            "username": username,
+            "email": email,
+            "password": password,
+            "full_name": (payload.full_name or "").strip(),
+            "must_change_password": payload.must_change_password,
+        })
+
+    # PUT is create-or-update: granting someone who already has access just
+    # resets their permission, which is a reasonable "fix their access" action.
     await gitea.api(session.token, "PUT",
                     f"{settings.repo_api}/collaborators/{username}",
                     json={"permission": payload.permission})
+
     role = _PERMISSION_ROLES[payload.permission]
-    return {"message": f"{username} now has access to the library as a "
-                       f"{_GRANTABLE_ROLES[payload.permission]}.",
-            "username": username, "role": role}
+    lead = f"{username} — account created — " if creating else f"{username} "
+    return {"message": f"{lead}now has access to the library as a "
+                       f"{_GRANTABLE_ROLES[payload.permission]}."
+                       + (" They'll be asked to set a new password on first "
+                          "sign-in." if creating and payload.must_change_password
+                          else ""),
+            "username": username, "role": role, "created": creating}
 
 
 @router.delete("/users/{username}")
@@ -174,6 +214,33 @@ async def remove_user(username: str,
         if exc.status_code != 404:
             raise
     return {"message": f"{username} no longer has access to the library.",
+            "username": username}
+
+
+@router.delete("/users/{username}/account")
+async def delete_account(username: str,
+                         session: UserSession = Depends(require_admin)):
+    """Permanently delete a user's Gitea account — the destructive counterpart
+    to account creation, and a step beyond `remove_user`'s access revoke.
+
+    Uses `DELETE /admin/users/{username}?purge=true`: a Gitea *site-admin*
+    operation (403 verbatim otherwise). `purge` is required because a normal
+    delete refuses any user who still owns content — and contributors own their
+    drafts fork — so this also destroys their forks, drafts, and comments. It
+    cannot be undone. The service account and the admin's own account are
+    refused outright.
+    """
+    if username == settings.bot_username:
+        raise HTTPException(status_code=400,
+                            detail="The service account cannot be deleted here.")
+    if username == session.username:
+        raise HTTPException(status_code=400,
+                            detail="You can't delete your own account.")
+
+    await gitea.api(session.token, "DELETE", f"/admin/users/{username}",
+                    params={"purge": "true"})
+    return {"message": f"The Gitea account '{username}' was permanently deleted, "
+                       "along with anything it owned (forks, drafts, comments).",
             "username": username}
 
 

@@ -10,10 +10,10 @@ const ROLE_LABELS = {
 }
 
 // Minimal user management (PLAN.MD phase E): list everyone with access, add or
-// remove who has access at all, and toggle Contributor-ness (= contributors-team
-// membership). Adding grants an existing Gitea account repo access; removing
-// revokes it (it does not delete the account). Approver/Admin promotions still
-// happen in Gitea/AD, not here.
+// remove users, and toggle Contributor-ness (= contributors-team membership).
+// "Add" can either create a brand-new Gitea account (needs a Gitea site-admin
+// signed in) or just grant an existing account access; "remove" revokes access.
+// Approver/Admin promotions still happen in Gitea/AD, not here.
 export default function AdminUsers() {
   const user = useUser()
   const [reloadKey, setReloadKey] = useState(0)
@@ -22,12 +22,25 @@ export default function AdminUsers() {
   const [notice, setNotice] = useState(null) // { kind: 'ok'|'error', text }
   const [newUsername, setNewUsername] = useState('')
   const [newPermission, setNewPermission] = useState('read')
+  const [createAccount, setCreateAccount] = useState(false)
+  const [newFullName, setNewFullName] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [newPassword, setNewPassword] = useState('')
 
   if (user.role !== 'admin') return <div className="empty">Admins only.</div>
   if (loading) return <div className="muted">Loading…</div>
   if (error) return <div className="alert alert-error">{error}</div>
 
   const reload = () => setReloadKey((k) => k + 1)
+
+  const resetAddForm = () => {
+    setNewUsername('')
+    setNewPermission('read')
+    setCreateAccount(false)
+    setNewFullName('')
+    setNewEmail('')
+    setNewPassword('')
+  }
 
   const toggle = async (username, member) => {
     setBusy(username)
@@ -49,17 +62,20 @@ export default function AdminUsers() {
     e.preventDefault()
     const username = newUsername.trim()
     if (!username) return
+    const account = createAccount
+      ? { email: newEmail.trim(), password: newPassword, full_name: newFullName.trim() }
+      : null
     setBusy('__add__')
     setNotice(null)
     try {
-      const res = await api.addUser(username, newPermission)
+      const res = await api.addUser(username, newPermission, account)
       setNotice({ kind: 'ok', text: res.message })
-      setNewUsername('')
-      setNewPermission('read')
+      resetAddForm()
       reload()
     } catch (err) {
-      // e.g. Gitea's 404 when the username doesn't exist, or its 403 when the
-      // admin lacks repo-admin rights — shown verbatim.
+      // Gitea's own message passes through — e.g. its 403 when the admin isn't
+      // a site admin (account creation) or repo admin (access grant), or its
+      // 422 when the username/email already exists.
       setNotice({ kind: 'error', text: err.message })
     } finally {
       setBusy('')
@@ -83,13 +99,33 @@ export default function AdminUsers() {
     }
   }
 
+  const deleteAccount = async (username) => {
+    if (!window.confirm(
+      `Permanently DELETE the Gitea account "${username}"?\n\n` +
+      `This cannot be undone. It also purges everything the account owns in ` +
+      `Gitea — their personal drafts, forks, and comments. To only take away ` +
+      `library access, use "Remove" instead.`)) return
+    setBusy(username)
+    setNotice(null)
+    try {
+      const res = await api.deleteAccount(username)
+      setNotice({ kind: 'ok', text: res.message })
+      reload()
+    } catch (err) {
+      // e.g. Gitea's 403 when the admin isn't a site administrator — verbatim.
+      setNotice({ kind: 'error', text: err.message })
+    } finally {
+      setBusy('')
+    }
+  }
+
   return (
     <div>
       <h1>Users</h1>
       <p className="muted">
-        Roles come live from Gitea. Here you can add a user (grant an existing
-        Gitea account access to the library), remove a user (revoke that access —
-        the account itself stays in Gitea), and change one role directly:
+        Roles come live from Gitea. Here you can add a user — either create a
+        brand-new Gitea account or grant an existing one access to the library —
+        remove a user (revoke that access), and change one role directly:
         membership in the <code>contributors</code> team, which turns a read-only
         Browser into a Contributor. Approver and Admin are granted in Gitea (or
         AD) directly. Where the team is synced from an AD group, the sync
@@ -131,15 +167,64 @@ export default function AdminUsers() {
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={busy === '__add__' || !newUsername.trim()}
+            disabled={
+              busy === '__add__' ||
+              !newUsername.trim() ||
+              (createAccount && (!newEmail.trim() || !newPassword))
+            }
           >
-            {busy === '__add__' ? 'Adding…' : 'Add'}
+            {busy === '__add__' ? 'Adding…' : createAccount ? 'Create & add' : 'Add'}
           </button>
         </div>
-        <div className="muted small">
-          The account must already exist in Gitea. Browsers can then be made
-          Contributors below.
-        </div>
+
+        <label className="admin-add-toggle">
+          <input
+            type="checkbox"
+            checked={createAccount}
+            onChange={(e) => setCreateAccount(e.target.checked)}
+          />
+          <span>Create a new Gitea account</span>
+        </label>
+
+        {createAccount ? (
+          <div className="admin-add-account">
+            <div className="admin-add-row">
+              <input
+                className="editor-note"
+                value={newFullName}
+                onChange={(e) => setNewFullName(e.target.value)}
+                placeholder="Full name (optional)"
+                autoComplete="off"
+              />
+              <input
+                className="editor-note"
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="Email"
+                autoComplete="off"
+              />
+              <input
+                className="editor-note"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Temporary password"
+                autoComplete="new-password"
+              />
+            </div>
+            <div className="muted small">
+              Creates the account in Gitea (you must be signed in as a Gitea site
+              admin), then grants it access. The user sets their own password on
+              first sign-in.
+            </div>
+          </div>
+        ) : (
+          <div className="muted small">
+            The account must already exist in Gitea. Browsers can then be made
+            Contributors below.
+          </div>
+        )}
       </form>
 
       <div className="card">
@@ -174,10 +259,18 @@ export default function AdminUsers() {
                 <button
                   className="btn btn-quiet admin-remove"
                   disabled={busy === u.username || isSelf}
-                  title={isSelf ? "You can't remove your own access" : 'Remove access to the library'}
+                  title={isSelf ? "You can't remove your own access" : 'Remove access to the library (keeps the account)'}
                   onClick={() => removeUser(u.username)}
                 >
                   Remove
+                </button>
+                <button
+                  className="btn btn-quiet admin-delete"
+                  disabled={busy === u.username || isSelf}
+                  title={isSelf ? "You can't delete your own account" : 'Permanently delete the Gitea account'}
+                  onClick={() => deleteAccount(u.username)}
+                >
+                  Delete account
                 </button>
               </li>
             )
