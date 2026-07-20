@@ -4,14 +4,15 @@
    the workstation, and falls back to high-quality system fonts otherwise. */
 
 :root {
-  /* Brand — drawn from the bank's palette (deep, trustworthy blues). */
-  --navy-900: #0c1f3f;
-  --navy-800: #12294f;
-  --navy-700: #1a3866;
-  --accent: #2d6bdf;          /* primary action blue */
-  --accent-strong: #1d4fae;   /* hover / active */
-  --accent-soft: #e9f0fc;     /* tinted backgrounds */
-  --accent-border: #c6d8f5;
+  /* Brand — the bank's deep green (#006F51) and its darker shades.
+     (--navy-* names kept for continuity; they now hold the dark greens.) */
+  --navy-900: #05251c;
+  --navy-800: #083326;
+  --navy-700: #0d4936;
+  --accent: #006f51;          /* primary action green */
+  --accent-strong: #00563e;   /* hover / active */
+  --accent-soft: #e6f2ee;     /* tinted backgrounds */
+  --accent-border: #b9dcd0;
 
   /* Neutrals */
   --bg: #f3f5f9;
@@ -22,6 +23,12 @@
   --text: #1c2534;
   --text-secondary: #46536a;
   --muted: #64748b;
+
+  /* Informational (blue) — kept distinct from the green brand so
+     "Bank approved" / info notices never read as success/action green. */
+  --info: #1d4fae;
+  --info-bg: #e9f0fc;
+  --info-border: #c6d8f5;
 
   /* Semantic */
   --green: #16704a;
@@ -150,7 +157,7 @@ a:hover { text-decoration: underline; }
   color: #fff;
   font-size: 1.05rem;
   font-weight: 700;
-  box-shadow: 0 2px 6px rgba(29, 79, 174, 0.35);
+  box-shadow: 0 2px 6px rgba(0, 86, 62, 0.35);
 }
 .brand-large .brand-mark { width: 42px; height: 42px; border-radius: 12px; font-size: 1.35rem; }
 
@@ -200,7 +207,7 @@ a:hover { text-decoration: underline; }
   border: 1px solid transparent;
 }
 .role-browser { background: var(--gray-bg); color: var(--muted); border-color: var(--border-strong); }
-.role-contributor { background: var(--accent-soft); color: var(--accent-strong); border-color: var(--accent-border); }
+.role-contributor { background: var(--info-bg); color: var(--info); border-color: var(--info-border); }
 .role-approver { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
 .role-admin { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); }
 
@@ -226,15 +233,15 @@ a:hover { text-decoration: underline; }
 .btn:hover { border-color: var(--muted); box-shadow: var(--shadow-sm); text-decoration: none; }
 .btn:active { transform: translateY(1px); box-shadow: var(--shadow-xs); }
 .btn-primary {
-  background: linear-gradient(180deg, var(--accent) 0%, #2a60c8 100%);
+  background: linear-gradient(180deg, #007a59 0%, var(--accent) 100%);
   border-color: var(--accent-strong);
   color: #fff;
-  box-shadow: 0 1px 2px rgba(29, 79, 174, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  box-shadow: 0 1px 2px rgba(0, 86, 62, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 .btn-primary:hover {
-  background: linear-gradient(180deg, #2a63d2 0%, var(--accent-strong) 100%);
+  background: linear-gradient(180deg, #006549 0%, var(--accent-strong) 100%);
   border-color: var(--accent-strong);
-  box-shadow: 0 2px 8px rgba(29, 79, 174, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 86, 62, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 .btn-success { background: var(--green); border-color: var(--green); color: #fff; }
 .btn-success:hover { background: var(--green); border-color: var(--green); }
@@ -253,8 +260,8 @@ a:hover { text-decoration: underline; }
   justify-content: center;
   padding: 1.5rem;
   background:
-    radial-gradient(1100px 520px at 85% -10%, rgba(45, 107, 223, 0.35), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(45, 107, 223, 0.28), transparent 55%),
+    radial-gradient(1100px 520px at 85% -10%, rgba(0, 138, 101, 0.35), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(0, 138, 101, 0.28), transparent 55%),
     linear-gradient(160deg, var(--navy-900) 0%, var(--navy-800) 55%, var(--navy-700) 100%);
 }
 .login-card {
@@ -327,7 +334,7 @@ a:hover { text-decoration: underline; }
 .search:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(45, 107, 223, 0.18);
+  box-shadow: 0 0 0 3px rgba(0, 111, 81, 0.18);
 }
 
 .filter-row { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-bottom: 1rem; align-items: center; }
@@ -469,8 +476,8 @@ a:hover { text-decoration: underline; }
 .badge-in-review { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); }
 .badge-deprecated { background: var(--red-bg); color: var(--red); border-color: var(--red-border); }
 /* Ownership: this user may publish changes here without an approver. */
-.badge-owner { background: var(--accent-soft); color: var(--accent-strong); border-color: var(--accent-border); }
-.badge-bank { background: var(--accent-soft); color: var(--accent-strong); border-color: var(--accent-border); }
+.badge-owner { background: var(--info-bg); color: var(--info); border-color: var(--info-border); }
+.badge-bank { background: var(--info-bg); color: var(--info); border-color: var(--info-border); }
 .badge-community { background: var(--purple-bg); color: var(--purple); border-color: var(--purple-border); }
 
 /* ---------------------------------------------------------------- Detail */
@@ -513,7 +520,7 @@ a:hover { text-decoration: underline; }
 .alert-error { background: var(--red-bg); color: var(--red); border-color: var(--red-border); }
 .alert-success { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
 .alert-warn { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); }
-.alert-info { background: var(--accent-soft); color: var(--accent-strong); border-color: var(--accent-border); }
+.alert-info { background: var(--info-bg); color: var(--info); border-color: var(--info-border); }
 .alert-info a { font-weight: 700; }
 
 /* ----------------------------------------------------------------- Forms */
@@ -544,7 +551,7 @@ select.editor-note {
 .editor-note:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(45, 107, 223, 0.18);
+  box-shadow: 0 0 0 3px rgba(0, 111, 81, 0.18);
 }
 .editor-actions { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin-top: 0.35rem; }
 
