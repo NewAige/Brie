@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAsyncData, useUser } from '../hooks.js'
 import { api } from '../api.js'
 import CopyButton from '../components/CopyButton.jsx'
-import StatusBadge from '../components/StatusBadge.jsx'
 import LevelBadge from '../components/LevelBadge.jsx'
 import Icon from '../components/Icon.jsx'
 import FavoriteButton from '../components/FavoriteButton.jsx'
@@ -29,7 +28,6 @@ export default function PromptDetail() {
       <div className="detail-head">
         <h1>{prompt.title}</h1>
         <LevelBadge level={prompt.level} owner={prompt.owner} />
-        <StatusBadge status={prompt.status} />
         {prompt.level === 'community' && prompt.owner && prompt.owner === user.username && (
           <span className="badge badge-owner" title="You can publish changes to this prompt without waiting for an approver.">
             You maintain this

@@ -1,6 +1,5 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import StatusBadge from './StatusBadge.jsx'
 import LevelBadge from './LevelBadge.jsx'
 import Icon from './Icon.jsx'
 import FavoriteButton from './FavoriteButton.jsx'
@@ -9,14 +8,13 @@ import FavoriteButton from './FavoriteButton.jsx'
 // favourite star sit above it (z-index) so they stay independently clickable.
 export default function PromptCard({ prompt, onTagClick, onFavoriteChange }) {
   return (
-    <div className={`card prompt-card ${prompt.status !== 'approved' ? 'card-muted' : ''}`}>
+    <div className="card prompt-card">
       <div className="card-head">
         <Link className="card-title" to={`/prompt/${prompt.path}`}>
           {prompt.title}
         </Link>
         <span className="card-badges">
           <LevelBadge level={prompt.level} owner={prompt.owner} compact />
-          <StatusBadge status={prompt.status} />
           <FavoriteButton
             path={prompt.path}
             favorited={prompt.favorited}
