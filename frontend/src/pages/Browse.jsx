@@ -2,18 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAsyncData, useUser } from '../hooks.js'
 import { api } from '../api.js'
-import PromptCard from '../components/PromptCard.jsx'
+import PromptTable from '../components/PromptTable.jsx'
 import Icon from '../components/Icon.jsx'
-
-function SkeletonCard() {
-  return (
-    <div className="card skeleton-card" aria-hidden="true">
-      <div className="skeleton skeleton-title" />
-      <div className="skeleton skeleton-line" />
-      <div className="skeleton skeleton-line-short" />
-    </div>
-  )
-}
 
 export default function Browse() {
   const user = useUser()
@@ -173,18 +163,15 @@ export default function Browse() {
           )}
         </div>
       )}
-      <div className="card-grid">
-        {prompts.loading
-          ? [1, 2, 3, 4, 5, 6].map((n) => <SkeletonCard key={n} />)
-          : (prompts.data || []).map((p) => (
-              <PromptCard
-                key={p.path}
-                prompt={p}
-                onTagClick={setTag}
-                onFavoriteChange={handleFavoriteChange}
-              />
-            ))}
-      </div>
+      {(prompts.loading || (prompts.data || []).length > 0) && (
+        <PromptTable
+          prompts={prompts.data}
+          loading={prompts.loading}
+          onTagClick={setTag}
+          activeTag={tag}
+          onFavoriteChange={handleFavoriteChange}
+        />
+      )}
     </div>
   )
 }

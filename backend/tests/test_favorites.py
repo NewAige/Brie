@@ -187,3 +187,12 @@ def test_favorites_filter_still_hides_deprecated(client):
 
 def test_no_filters_returns_everything_visible(client):
     assert paths(client.get("/api/prompts")) == [FAVE, MINE, THEIRS]
+
+
+def test_list_always_includes_updated_field(client):
+    """The library table shows a last-modified column; `updated` is set by the
+    real index at rebuild time and must fall back to "" (not a KeyError) when
+    the index entry predates the field — as this faked library does."""
+    rows = client.get("/api/prompts").json()
+    assert rows
+    assert all(p["updated"] == "" for p in rows)

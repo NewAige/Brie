@@ -2,12 +2,12 @@ import React, { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import Icon from './Icon.jsx'
 
-// Star toggle shared by the library cards and the prompt detail page.
+// Star toggle shared by the library table rows and the prompt detail page.
 //
 // Optimistic: the star flips immediately and rolls back if the request fails,
 // because marking is a low-stakes personal bookmark — waiting on a round trip
 // to redraw an icon feels broken. `onChange` lets a parent (the Library page
-// filtered to favourites) drop the card once it is unmarked.
+// filtered to favourites) drop the row once it is unmarked.
 export default function FavoriteButton({ path, favorited, onChange, large = false }) {
   const [marked, setMarked] = useState(favorited)
   const [busy, setBusy] = useState(false)

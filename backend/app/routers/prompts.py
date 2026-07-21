@@ -21,6 +21,9 @@ def _public(prompt: dict, with_body: bool, favorited: bool = False) -> dict:
     fields = ["path", "category", "title", "tags", "status", "level", "author",
               "owner", "copied_from", "target_model", "intended_use", "review_notes"]
     out = {k: prompt[k] for k in fields}
+    # Set by prompt_index at rebuild time; absent when parsing a single file
+    # (detail view, faked indexes in tests), where "" simply hides the date.
+    out["updated"] = prompt.get("updated", "")
     out["favorited"] = favorited
     if with_body:
         out["body"] = prompt["body"]
