@@ -19,6 +19,20 @@ const LIMITS = {
   note: 2000,
 }
 
+// The shape every library prompt follows — distilled from the seeded prompts
+// and _templates/prompt-template.md so AI-drafted bodies match the house style
+// (and general prompt-engineering practice) instead of free-form markdown.
+const BODY_STYLE = `Write the prompt body in the library's house style, which follows prompt-engineering good practice:
+- Open with one or two sentences stating the role and task, e.g. "You are helping a support agent answer a customer's question about..." or "Draft a reply to the customer message below."
+- Follow with a "Rules:" or "Requirements:" bullet list of the constraints: tone, length, audience, and an explicit "Never ..." / "Do not ..." line for each thing that must not happen (compliance guardrails especially).
+- If the result must have a particular shape, add an "Output format:" section that spells it out exactly (numbered sections, table columns, word limits).
+- End with a labelled slot for whatever the user pastes in each time, e.g.:
+  Customer message:
+  [PASTE THE CUSTOMER MESSAGE HERE]
+- Placeholders are ALL-CAPS in square brackets, like [CUSTOMER NAME]. Every placeholder must be obvious about what goes in it.
+- Plain markdown only: paragraphs, bullet and numbered lists, bold labels. No YAML, no code fences, and no metadata in the body — title, tags and so on travel in the other JSON fields.
+- Be specific, not vague ("answer each question in its own short paragraph", not "be helpful"). Include a short example only if the format is genuinely hard to describe.`
+
 const OUTPUT_RULES = `How to hand the result back:
 - Put the JSON in your code editor / canvas panel if you have one, otherwise in a fenced \`\`\`json code block, so I can copy it in one click.
 - Output a single JSON object and nothing after it. No comments inside the JSON, no trailing commas.
@@ -41,7 +55,9 @@ export function buildNewPromptInstructions(categories, draft = {}) {
 
 Step 1 — scope my intent before writing anything. Interview me briefly: what task is the prompt for, who at the bank will use it, what inputs it needs (use bracketed placeholders like [CUSTOMER NAME] for anything filled in per use), what tone and constraints apply, and what a good result looks like. Ask a few questions at a time and only what you actually need.
 
-Step 2 — draft the prompt in markdown and show it to me for feedback. It should be self-contained: instructions, tone, constraints, and placeholders. Do not include any confidential data — placeholders only.
+Step 2 — draft the prompt in markdown and show it to me for feedback. It must be self-contained: someone who has never spoken to us should be able to copy it, fill in the placeholders, and get a good result. Do not include any confidential data — placeholders only.
+
+${BODY_STYLE}
 
 Step 3 — only after I confirm the draft is right, output the final result as a single JSON object with exactly these fields:
 - "type": exactly "${NEW_PROMPT_TYPE}"
@@ -69,7 +85,10 @@ PROMPT>>>
 
 Step 1 — scope my intent before changing anything. Ask me what I want improved and why, what must stay the same, and what a better version looks like. Ask a few questions at a time and only what you actually need.
 
-Step 2 — revise the prompt and show me the full revised markdown for feedback. Change only what serves the goal; keep the untouched parts exactly as they are. Do not include any confidential data — bracketed placeholders like [CUSTOMER NAME] only.
+Step 2 — revise the prompt and show me the full revised markdown for feedback. Change only what serves the goal; keep the untouched parts exactly as they are, including the prompt's structure (task statement, "Rules:" list, "Output format:" section, labelled paste-in slot) unless restructuring is the point of the edit. Do not include any confidential data — bracketed placeholders like [CUSTOMER NAME] only.
+
+If the current prompt lacks that structure and I ask for a general improvement, reshaping it toward this house style is welcome:
+${BODY_STYLE}
 
 Step 3 — only after I confirm the revision is right, output the final result as a single JSON object with exactly these fields:
 - "type": exactly "${SUGGESTION_TYPE}"
