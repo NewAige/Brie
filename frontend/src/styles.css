@@ -760,6 +760,30 @@ select.editor-note {
   box-shadow: 0 0 0 3px rgba(0, 111, 81, 0.18);
 }
 .editor-actions { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin-top: 0.35rem; }
+
+/* "Draft it with AI" helper (components/AiAssist.jsx). Dashed border keeps it
+   visually optional — an aside to the form, not part of it. */
+.ai-assist {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  padding: 0.35rem 0.6rem;
+  margin-bottom: 0.9rem;
+}
+.ai-assist-toggle { width: 100%; justify-content: flex-start; }
+.ai-assist-toggle .icon:last-child { margin-left: auto; }
+.ai-assist-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.25rem 0.5rem 0.75rem;
+}
+.ai-assist-body p { margin: 0.2rem 0 0; }
+.ai-assist-body .alert { margin: 0; align-self: stretch; }
+.ai-assist-paste { min-height: 5.5rem; }
+/* Inside the suggest-edit card the editor's own gap provides the spacing. */
+.editor .ai-assist { margin-bottom: 0.35rem; }
 /* Title + category sit side by side in the draft editor; they stack on narrow screens. */
 .draft-meta-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
 @media (max-width: 640px) { .draft-meta-fields { grid-template-columns: 1fr; } }

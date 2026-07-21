@@ -6,6 +6,8 @@ import CopyButton from '../components/CopyButton.jsx'
 import LevelBadge from '../components/LevelBadge.jsx'
 import Icon from '../components/Icon.jsx'
 import FavoriteButton from '../components/FavoriteButton.jsx'
+import AiAssist from '../components/AiAssist.jsx'
+import { buildSuggestionInstructions, SUGGESTION_TYPE } from '../aiImport.js'
 
 export default function PromptDetail() {
   // Path after /prompt/ — may contain slashes.
@@ -142,6 +144,14 @@ function SuggestEditor({ prompt, onDone }) {
 
   return (
     <div className="editor card">
+      <AiAssist
+        expectedType={SUGGESTION_TYPE}
+        buildInstructions={() => buildSuggestionInstructions(prompt.title, body)}
+        onImport={(data) => {
+          setBody(data.body)
+          if (data.note) setNote(data.note)
+        }}
+      />
       <label className="field-label" htmlFor="suggest-body">Your improved version</label>
       <textarea
         id="suggest-body"
