@@ -89,17 +89,20 @@ export const api = {
   merge: (id) => request(`/api/pulls/${id}/merge`, { method: 'POST' }),
   activity: () => request('/api/activity'),
   adminUsers: () => request('/api/admin/users'),
-  setContributor: (username, member) =>
-    request(`/api/admin/users/${encodeURIComponent(username)}/contributor`, {
+  // One call for a full role change: repo permission *and* contributors-team
+  // membership, which together are what the backend derives a role from.
+  // `role` is 'browser' | 'contributor' | 'approver' (admin stays Gitea-side).
+  setRole: (username, role) =>
+    request(`/api/admin/users/${encodeURIComponent(username)}/role`, {
       method: 'PUT',
-      body: JSON.stringify({ member }),
+      body: JSON.stringify({ role }),
     }),
   // `account` (optional): { email, password, full_name } to create a brand-new
   // Gitea account before granting access. Omit it to grant an existing account.
-  addUser: (username, permission, account = null) =>
+  addUser: (username, role, account = null) =>
     request('/api/admin/users', {
       method: 'POST',
-      body: JSON.stringify({ username, permission, ...(account || {}) }),
+      body: JSON.stringify({ username, role, ...(account || {}) }),
     }),
   removeUser: (username) =>
     request(`/api/admin/users/${encodeURIComponent(username)}`, {

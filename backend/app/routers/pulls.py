@@ -130,6 +130,40 @@ async def merge_pull(pr_id: int, session: UserSession = Depends(current_session)
     return {"message": "Suggestion approved and published."}
 
 
+async def try_publish_now(session: UserSession, pr_id: int) -> bool:
+    """Publish a freshly-opened PR immediately, if its author may self-merge.
+
+    Used by the create/publish endpoints so that "Publish to Community" means
+    what it says: a new community prompt the author owns lands in the library
+    on the button press, instead of parking in Suggestions for a second click
+    that only ever had one possible outcome.
+
+    Authorization is NOT special-cased here — this runs the same
+    `owner_mergeable` predicate the merge endpoint does, so a bank-level or
+    peer-owned PR is refused and stays in the queue for an approver.
+
+    Returns True if the prompt is live. Any failure (denied, conflict, Gitea
+    error) returns False and leaves the PR open, so the caller falls back to
+    the "finish it under Suggestions" path rather than losing the work.
+    """
+    if not settings.owner_merge_enabled:
+        return False
+    try:
+        decision = await ownership.owner_mergeable(
+            session.token, session.username, pr_id)
+        if not decision.allowed:
+            log.info("auto-publish declined for %s on PR %s: %s",
+                     session.username, pr_id, decision.reason)
+            return False
+        await _owner_merge(session, pr_id, decision)
+        return True
+    except Exception:
+        # The PR is still open and still self-mergeable by hand; that is a
+        # worse experience but not a lost prompt, so never surface this.
+        log.exception("auto-publish failed for %s on PR %s", session.username, pr_id)
+        return False
+
+
 async def _owner_merge(session: UserSession, pr_id: int,
                        decision: ownership.Decision) -> dict:
     """Publish a PR the user owns, using the service account.

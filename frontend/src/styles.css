@@ -781,9 +781,48 @@ select.editor-note {
 
 /* ----------------------------------------------------------- Admin users */
 .admin-users { gap: 0; }
-.admin-user-row { flex-direction: row; align-items: center; gap: 0.7rem; padding: 0.65rem 0; border-bottom: 1px solid var(--border); }
+/* Three aligned columns — name / role / actions — so the rows read as one
+   list rather than as free-floating controls. Collapses to stacked blocks
+   under 40rem, where the columns would be too narrow to line up anyway. */
+.admin-user-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 13rem auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--border);
+}
 .admin-users .admin-user-row:last-child { border-bottom: none; }
-.admin-user-name { flex: 1; font-weight: 600; display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; }
+.admin-user-head {
+  padding: 0 0 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border-strong);
+}
+.admin-user-name { min-width: 0; font-weight: 600; display: flex; align-items: baseline; gap: 0.55rem; flex-wrap: wrap; }
+.admin-user-label { overflow-wrap: anywhere; }
+.admin-user-role { display: flex; align-items: center; gap: 0.5rem; }
+.admin-user-actions { display: flex; align-items: center; gap: 0.4rem; justify-content: flex-end; }
+.role-select {
+  width: 100%;
+  padding: 0.28rem 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.role-select:disabled { cursor: default; opacity: 0.75; }
+@media (max-width: 40rem) {
+  .admin-user-row { grid-template-columns: 1fr; gap: 0.45rem; }
+  .admin-user-head { display: none; }
+  .admin-user-actions { justify-content: flex-start; }
+}
 .admin-remove { color: var(--red); }
 .admin-remove:hover:not(:disabled) { color: var(--red); background: var(--red-bg); }
 .admin-delete { color: var(--red); font-weight: 600; }

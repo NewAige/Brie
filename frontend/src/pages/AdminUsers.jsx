@@ -9,11 +9,15 @@ const ROLE_LABELS = {
   admin: 'Admin',
 }
 
+// Roles an admin can assign from this page, in ascending order of power. Admin
+// is deliberately absent: repo-owner power stays a Gitea-side action, and the
+// backend rejects it too (_ASSIGNABLE_ROLES in routers/admin.py).
+const ASSIGNABLE_ROLES = ['browser', 'contributor', 'approver']
+
 // Minimal user management (PLAN.MD phase E): list everyone with access, add or
-// remove users, and toggle Contributor-ness (= contributors-team membership).
-// "Add" can either create a brand-new Gitea account (needs a Gitea site-admin
-// signed in) or just grant an existing account access; "remove" revokes access.
-// Approver/Admin promotions still happen in Gitea/AD, not here.
+// remove users, and change a user's role. "Add" can either create a brand-new
+// Gitea account (needs a Gitea site-admin signed in) or just grant an existing
+// account access; "remove" revokes access. Admin still comes from Gitea/AD.
 export default function AdminUsers() {
   const user = useUser()
   const [reloadKey, setReloadKey] = useState(0)
@@ -21,7 +25,7 @@ export default function AdminUsers() {
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null) // { kind: 'ok'|'error', text }
   const [newUsername, setNewUsername] = useState('')
-  const [newPermission, setNewPermission] = useState('read')
+  const [newRole, setNewRole] = useState('browser')
   const [createAccount, setCreateAccount] = useState(false)
   const [newFullName, setNewFullName] = useState('')
   const [newEmail, setNewEmail] = useState('')
@@ -35,18 +39,18 @@ export default function AdminUsers() {
 
   const resetAddForm = () => {
     setNewUsername('')
-    setNewPermission('read')
+    setNewRole('browser')
     setCreateAccount(false)
     setNewFullName('')
     setNewEmail('')
     setNewPassword('')
   }
 
-  const toggle = async (username, member) => {
+  const changeRole = async (username, role) => {
     setBusy(username)
     setNotice(null)
     try {
-      const res = await api.setContributor(username, member)
+      const res = await api.setRole(username, role)
       setNotice({ kind: 'ok', text: res.message })
       reload()
     } catch (err) {
@@ -68,7 +72,7 @@ export default function AdminUsers() {
     setBusy('__add__')
     setNotice(null)
     try {
-      const res = await api.addUser(username, newPermission, account)
+      const res = await api.addUser(username, newRole, account)
       setNotice({ kind: 'ok', text: res.message })
       resetAddForm()
       reload()
@@ -125,11 +129,10 @@ export default function AdminUsers() {
       <p className="muted page-intro">
         Roles come live from Gitea. Here you can add a user — either create a
         brand-new Gitea account or grant an existing one access to the library —
-        remove a user (revoke that access), and change one role directly:
-        membership in the <code>contributors</code> team, which turns a read-only
-        Browser into a Contributor. Approver and Admin are granted in Gitea (or
-        AD) directly. Where the team is synced from an AD group, the sync
-        overwrites changes made here.
+        change anyone's role between Browser, Contributor and Bank Approver, and
+        remove a user (revoke that access). Admin is granted in Gitea (or AD)
+        directly. Where access is synced from an AD group, the sync overwrites
+        changes made here.
       </p>
 
       {notice && (
@@ -140,7 +143,7 @@ export default function AdminUsers() {
       {!data.team_found && (
         <div className="alert alert-error">
           The <code>contributors</code> team does not exist on the org yet, so
-          membership cannot be changed. Create it in Gitea first.
+          the Contributor role cannot be assigned. Create it in Gitea first.
         </div>
       )}
 
@@ -157,12 +160,13 @@ export default function AdminUsers() {
           />
           <select
             className="editor-note"
-            value={newPermission}
-            onChange={(e) => setNewPermission(e.target.value)}
-            aria-label="Access level"
+            value={newRole}
+            onChange={(e) => setNewRole(e.target.value)}
+            aria-label="Role"
           >
-            <option value="read">Browser (read)</option>
-            <option value="write">Bank Approver (write)</option>
+            {ASSIGNABLE_ROLES.map((role) => (
+              <option key={role} value={role}>{ROLE_LABELS[role]}</option>
+            ))}
           </select>
           <button
             type="submit"
@@ -170,6 +174,7 @@ export default function AdminUsers() {
             disabled={
               busy === '__add__' ||
               !newUsername.trim() ||
+              (newRole === 'contributor' && !data.team_found) ||
               (createAccount && (!newEmail.trim() || !newPassword))
             }
           >
@@ -221,57 +226,76 @@ export default function AdminUsers() {
           </div>
         ) : (
           <div className="muted small">
-            The account must already exist in Gitea. Browsers can then be made
-            Contributors below.
+            The account must already exist in Gitea. Their role can be changed
+            in the list below at any time.
           </div>
         )}
       </form>
 
       <div className="card">
         <ul className="plain-list admin-users">
+          <li className="admin-user-row admin-user-head" aria-hidden="true">
+            <span className="admin-user-name">User</span>
+            <span className="admin-user-role">Role</span>
+            <span className="admin-user-actions">Actions</span>
+          </li>
           {data.users.map((u) => {
             const isSelf = u.username === user.username
+            // Admin isn't assignable here, so an admin's row shows a disabled
+            // dropdown holding their real role rather than silently offering a
+            // demotion the backend would then have to explain refusing.
+            const locked = isSelf || u.role === 'admin'
             return (
               <li key={u.username} className="admin-user-row">
                 <span className="admin-user-name">
-                  {u.full_name || u.username}
-                  {u.full_name && <span className="muted small"> · {u.username}</span>}
-                  {isSelf && <span className="muted small"> (you)</span>}
+                  <span className="admin-user-label">{u.full_name || u.username}</span>
+                  {u.full_name && <span className="muted small">{u.username}</span>}
+                  {isSelf && <span className="muted small">(you)</span>}
                 </span>
-                <span className={`role-chip role-${u.role}`}>
-                  {ROLE_LABELS[u.role] || u.role}
-                </span>
-                {u.role === 'browser' || u.role === 'contributor' ? (
-                  <button
-                    className="btn btn-quiet"
-                    disabled={busy === u.username || !data.team_found}
-                    onClick={() => toggle(u.username, !u.contributor)}
+                <span className="admin-user-role">
+                  <select
+                    className={`role-select role-${u.role}`}
+                    value={u.role}
+                    disabled={locked || busy === u.username}
+                    aria-label={`Role for ${u.username}`}
+                    title={
+                      isSelf ? "You can't change your own role"
+                        : u.role === 'admin' ? 'Admin is managed in Gitea'
+                          : 'Change this user\'s role'
+                    }
+                    onChange={(e) => changeRole(u.username, e.target.value)}
                   >
-                    {busy === u.username
-                      ? 'Saving…'
-                      : u.contributor
-                        ? 'Remove from contributors'
-                        : 'Make contributor'}
+                    {u.role === 'admin' && <option value="admin">Admin</option>}
+                    {ASSIGNABLE_ROLES.map((role) => (
+                      <option
+                        key={role}
+                        value={role}
+                        disabled={role === 'contributor' && !data.team_found}
+                      >
+                        {ROLE_LABELS[role]}
+                      </option>
+                    ))}
+                  </select>
+                  {busy === u.username && <span className="muted small">Saving…</span>}
+                </span>
+                <span className="admin-user-actions">
+                  <button
+                    className="btn btn-quiet admin-remove"
+                    disabled={busy === u.username || isSelf}
+                    title={isSelf ? "You can't remove your own access" : 'Remove access to the library (keeps the account)'}
+                    onClick={() => removeUser(u.username)}
+                  >
+                    Remove
                   </button>
-                ) : (
-                  <span className="muted small">managed in Gitea</span>
-                )}
-                <button
-                  className="btn btn-quiet admin-remove"
-                  disabled={busy === u.username || isSelf}
-                  title={isSelf ? "You can't remove your own access" : 'Remove access to the library (keeps the account)'}
-                  onClick={() => removeUser(u.username)}
-                >
-                  Remove
-                </button>
-                <button
-                  className="btn btn-quiet admin-delete"
-                  disabled={busy === u.username || isSelf}
-                  title={isSelf ? "You can't delete your own account" : 'Permanently delete the Gitea account'}
-                  onClick={() => deleteAccount(u.username)}
-                >
-                  Delete account
-                </button>
+                  <button
+                    className="btn btn-quiet admin-delete"
+                    disabled={busy === u.username || isSelf}
+                    title={isSelf ? "You can't delete your own account" : 'Permanently delete the Gitea account'}
+                    onClick={() => deleteAccount(u.username)}
+                  >
+                    Delete account
+                  </button>
+                </span>
               </li>
             )
           })}

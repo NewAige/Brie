@@ -97,6 +97,9 @@ def test_non_admin_gets_403(make_client, role):
         resp = client.put("/api/admin/users/uma.user/contributor",
                           json={"member": True})
         assert resp.status_code == 403
+        resp = client.put("/api/admin/users/uma.user/role",
+                          json={"role": "contributor"})
+        assert resp.status_code == 403
         assert client.post("/api/admin/users",
                            json={"username": "new.user"}).status_code == 403
         assert client.delete("/api/admin/users/uma.user").status_code == 403
@@ -218,6 +221,89 @@ def test_gitea_403_passes_through_verbatim(make_client, monkeypatch):
     assert resp.json()["detail"] == "Must be an organization owner"
 
 
+# --- PUT /users/{username}/role ---------------------------------------------
+
+def test_set_role_to_contributor_joins_team_and_grants_read(make_client, fake_gitea):
+    """Contributor is read + team membership, so both writes must happen — and
+    the team join first, since it's the one needing org-owner rights."""
+    fake = fake_gitea(FakeGitea(collaborators=[user("ben.browser")],
+                                permissions={"ben.browser": "read"}))
+    with make_client("admin") as client:
+        resp = client.put("/api/admin/users/ben.browser/role",
+                          json={"role": "contributor"})
+    assert resp.status_code == 200
+    assert resp.json()["role"] == "contributor"
+    assert resp.json()["contributor"] is True
+    writes = [(t, m, p) for (t, m, p) in fake.calls if m in ("PUT", "DELETE")]
+    assert writes == [
+        ("admin-tok", "PUT", "/teams/7/members/ben.browser"),
+        ("admin-tok", "PUT", f"{settings.repo_api}/collaborators/ben.browser"),
+    ]
+
+
+def test_set_role_to_approver_leaves_team(make_client, fake_gitea):
+    """Promoting a contributor to approver drops the team membership that would
+    otherwise keep shadowing the role."""
+    fake = fake_gitea(FakeGitea(team_members=[user("cara.contrib")],
+                                permissions={"cara.contrib": "read"}))
+    with make_client("admin") as client:
+        resp = client.put("/api/admin/users/cara.contrib/role",
+                          json={"role": "approver"})
+    assert resp.status_code == 200
+    assert resp.json()["role"] == "approver"
+    writes = [(m, p) for (_t, m, p) in fake.calls if m in ("PUT", "DELETE")]
+    assert writes == [
+        ("DELETE", "/teams/7/members/cara.contrib"),
+        ("PUT", f"{settings.repo_api}/collaborators/cara.contrib"),
+    ]
+
+
+def test_set_role_skips_team_call_when_membership_already_correct(
+        make_client, fake_gitea):
+    """browser -> approver touches no team endpoint: an unnecessary team write
+    would 403 for a repo-admin who isn't an org owner."""
+    fake = fake_gitea(FakeGitea(collaborators=[user("ben.browser")],
+                                permissions={"ben.browser": "read"}))
+    with make_client("admin") as client:
+        resp = client.put("/api/admin/users/ben.browser/role",
+                          json={"role": "approver"})
+    assert resp.status_code == 200
+    assert not any(p.startswith("/teams/7/members/") for (_t, _m, p) in fake.calls)
+
+
+def test_set_role_rejects_admin_and_unknown_roles(make_client, fake_gitea):
+    fake = fake_gitea(FakeGitea())
+    with make_client("admin") as client:
+        for role in ("admin", "owner", ""):
+            resp = client.put("/api/admin/users/ben.browser/role",
+                              json={"role": role})
+            assert resp.status_code == 400, role
+    assert not fake.calls
+
+
+def test_set_role_refuses_self_and_bot(make_client, fake_gitea, monkeypatch):
+    """Demoting yourself would lock you out of this page mid-request."""
+    monkeypatch.setattr(admin, "settings",
+                        dataclasses.replace(settings, bot_username="pl-bot"))
+    fake = fake_gitea(FakeGitea())
+    with make_client("admin") as client:
+        assert client.put(f"/api/admin/users/{ADMIN}/role",
+                          json={"role": "browser"}).status_code == 400
+        assert client.put("/api/admin/users/pl-bot/role",
+                          json={"role": "browser"}).status_code == 400
+    assert not fake.calls
+
+
+def test_set_role_contributor_without_team_404s(make_client, fake_gitea):
+    fake = fake_gitea(FakeGitea(teams=[]))
+    with make_client("admin") as client:
+        resp = client.put("/api/admin/users/ben.browser/role",
+                          json={"role": "contributor"})
+    assert resp.status_code == 404
+    assert "contributors" in resp.json()["detail"]
+    assert not any(m in ("PUT", "DELETE") for (_t, m, _p) in fake.calls)
+
+
 # --- POST /users (add) ------------------------------------------------------
 
 def test_add_existing_user_as_browser(make_client, fake_gitea):
@@ -229,7 +315,8 @@ def test_add_existing_user_as_browser(make_client, fake_gitea):
     assert resp.status_code == 200
     body = resp.json()
     assert body == {"message": "new.hire now has access to the library as a Browser.",
-                    "username": "new.hire", "role": "browser", "created": False}
+                    "username": "new.hire", "role": "browser", "created": False,
+                    "contributor": False}
     # The default permission is read, sent as the admin, to the collaborator API.
     grant = [(t, m, p) for (t, m, p) in fake.calls
              if p == f"{settings.repo_api}/collaborators/new.hire"]
@@ -256,6 +343,54 @@ def test_create_account_then_grant(make_client, fake_gitea):
     assert ordered == [("POST", "/admin/users"),
                        ("PUT", f"{settings.repo_api}/collaborators/cara.new")]
     assert all(t == "admin-tok" for (t, _m, _p) in fake.calls)
+
+
+def test_add_user_as_contributor_grants_read_and_joins_team(make_client, fake_gitea):
+    """Contributor is selectable at add time, not only via a follow-up change."""
+    fake = fake_gitea(FakeGitea())
+    with make_client("admin") as client:
+        resp = client.post("/api/admin/users",
+                           json={"username": "new.hire", "role": "contributor"})
+    assert resp.status_code == 200
+    assert resp.json()["role"] == "contributor"
+    assert resp.json()["contributor"] is True
+    writes = [(m, p) for (_t, m, p) in fake.calls if m in ("PUT", "POST")]
+    assert writes == [
+        ("PUT", f"{settings.repo_api}/collaborators/new.hire"),
+        ("PUT", "/teams/7/members/new.hire"),
+    ]
+
+
+def test_add_contributor_without_team_404s_before_creating_account(
+        make_client, fake_gitea):
+    """The team is resolved up front so a missing one can't leave a brand-new
+    account stranded as a plain Browser."""
+    fake = fake_gitea(FakeGitea(teams=[]))
+    with make_client("admin") as client:
+        resp = client.post("/api/admin/users", json={
+            "username": "cara.new", "role": "contributor",
+            "email": "cara@bank.example", "password": "Temp-Pass-1"})
+    assert resp.status_code == 404
+    assert not any(m in ("POST", "PUT") for (_t, m, _p) in fake.calls)
+
+
+def test_add_user_legacy_permission_alias_still_works(make_client, fake_gitea):
+    """Older clients send Gitea permissions rather than app roles."""
+    fake_gitea(FakeGitea())
+    with make_client("admin") as client:
+        resp = client.post("/api/admin/users",
+                           json={"username": "amy", "permission": "write"})
+    assert resp.status_code == 200
+    assert resp.json()["role"] == "approver"
+
+
+def test_add_user_rejects_unknown_role(make_client, fake_gitea):
+    fake = fake_gitea(FakeGitea())
+    with make_client("admin") as client:
+        resp = client.post("/api/admin/users",
+                           json={"username": "eve", "role": "admin"})
+    assert resp.status_code == 400
+    assert not fake.calls
 
 
 def test_create_account_needs_email_and_password(make_client, fake_gitea):

@@ -49,7 +49,7 @@ export default function NewPrompt() {
     setError(null)
     try {
       const res = await api.createPrompt(payload())
-      setSent({ message: res.message, draft: false })
+      setSent({ message: res.message, draft: false, published: res.published })
     } catch (err) {
       setError(err.message)
       setBusy(false)
@@ -77,6 +77,11 @@ export default function NewPrompt() {
             <>
               It&apos;s private to you until you publish it — find it under{' '}
               <Link to="/drafts">My drafts</Link>.
+            </>
+          ) : sent.published ? (
+            <>
+              It&apos;s in the <Link to="/">Community library</Link> with you as its
+              owner. Edits by anyone else come back to you to publish.
             </>
           ) : (
             <>

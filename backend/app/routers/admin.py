@@ -1,13 +1,14 @@
 """Minimal admin surface (PLAN.MD phase E).
 
-See who has which role; toggle Contributor-ness (= membership in the org's
-`contributors` team); and add or remove who has access to the library repo at
-all. Everything else about roles stays in Gitea/AD.
+See who has which role; set anyone's role to Browser, Contributor or Bank
+Approver; and add or remove who has access to the library repo at all. Admin
+stays in Gitea/AD.
 
-"Add a user" here means granting an existing Gitea account access to the
-library repo as a direct collaborator (Browser by default, promotable from
-there); "remove a user" means revoking that access — not deleting the Gitea
-account, whose lifecycle stays in Gitea/AD.
+A role is two things in Gitea — a repo permission (`read`/`write`) and, for
+Contributor, membership in the org's `contributors` team — so `set_role` writes
+both. "Add a user" grants a Gitea account access to the library repo as a direct
+collaborator in the chosen role; "remove a user" revokes that access — not
+deleting the Gitea account, whose lifecycle stays in Gitea/AD.
 
 Every call here uses the ADMIN'S OWN token, never the bot: the bot's scope is
 deliberately limited to repository writes (ownership.py), and user/team
@@ -39,6 +40,26 @@ _PERMISSION_ROLES = {"admin": "admin", "write": "approver", "read": "browser"}
 # promotable to Contributor with the toggle below) and `write` (Bank Approver).
 # Granting `admin` (repo-owner power) stays a deliberate Gitea-side action.
 _GRANTABLE_ROLES = {"read": "Browser", "write": "Bank Approver"}
+
+# Display names for the four roles, so messages from here read the way the UI
+# labels them (frontend keeps its own copy for rendering).
+ROLE_LABELS = {
+    "browser": "Browser",
+    "contributor": "Contributor",
+    "approver": "Bank Approver",
+    "admin": "Admin",
+}
+
+# App roles an admin may assign directly from the Users page, and the repo
+# permission each one needs. `contributor` is `read` *plus* membership in the
+# contributors team — the one role that isn't a repo permission on its own.
+# `admin` is absent for the same reason it's absent from _GRANTABLE_ROLES:
+# handing out repo-owner power stays a deliberate Gitea-side action.
+_ASSIGNABLE_ROLES = {
+    "browser": "read",
+    "contributor": "read",
+    "approver": "write",
+}
 
 
 @router.get("/users")
@@ -101,9 +122,72 @@ async def set_contributor(username: str, update: ContributorUpdate,
             "username": username, "contributor": update.member}
 
 
+class RoleUpdate(BaseModel):
+    role: str  # "browser" | "contributor" | "approver"
+
+
+@router.put("/users/{username}/role")
+async def set_role(username: str, update: RoleUpdate,
+                   session: UserSession = Depends(require_admin)):
+    """Set a user's role in one action: repo permission *and* contributors-team
+    membership, which together are what roles.derive_role reads.
+
+    The team change runs first and only when it's actually needed. That
+    ordering matters: team membership needs **org owner** rights while the
+    collaborator grant needs only repo admin, so a repo-admin-but-not-org-owner
+    gets Gitea's 403 before anything has changed, rather than a user left on the
+    new permission with the old team membership.
+
+    `admin` is not assignable here (see _ASSIGNABLE_ROLES), and neither the
+    service account nor the admin's own row can be changed — the latter because
+    demoting yourself would lock you out of this page mid-request.
+    """
+    role = update.role
+    if role not in _ASSIGNABLE_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail="role must be 'browser', 'contributor' or 'approver'. "
+                   "Admin is granted in Gitea.")
+    if username == settings.bot_username:
+        raise HTTPException(
+            status_code=400,
+            detail="The service account is managed by the server, not here.")
+    if username == session.username:
+        raise HTTPException(status_code=400,
+                            detail="You can't change your own role.")
+
+    want_team = role == "contributor"
+    team = await _find_team(session.token)
+    in_team = bool(team) and \
+        username in await _team_member_names(session.token, team)
+    if want_team and team is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No team named '{CONTRIBUTORS_TEAM}' exists on the "
+                   f"'{settings.repo_owner}' org — create it in Gitea first "
+                   "(scripts/seed.py does this in dev).")
+    if want_team != in_team:
+        await gitea.api(session.token, "PUT" if want_team else "DELETE",
+                        f"/teams/{team['id']}/members/{username}")
+
+    # PUT is create-or-update, so this both promotes and demotes.
+    await gitea.api(session.token, "PUT",
+                    f"{settings.repo_api}/collaborators/{username}",
+                    json={"permission": _ASSIGNABLE_ROLES[role]})
+
+    return {"message": f"{username} is now a {ROLE_LABELS[role]}. Their role "
+                       "updates on their next sign-in or within a minute.",
+            "username": username, "role": role,
+            "contributor": want_team}
+
+
 class AddUser(BaseModel):
     username: str
-    permission: str = "read"  # "read" -> Browser, "write" -> Bank Approver
+    # The app role to grant: "browser", "contributor" or "approver".
+    role: str | None = None
+    # Legacy alias, from when this endpoint spoke Gitea permissions directly:
+    # "read" -> browser, "write" -> approver. Used only when `role` is absent.
+    permission: str | None = None
     # When `email` and `password` are both given, a brand-new Gitea account is
     # created first (needs a Gitea SITE-ADMIN token); otherwise the username is
     # assumed to already exist and is only granted access.
@@ -119,9 +203,9 @@ class AddUser(BaseModel):
 async def add_user(payload: AddUser, session: UserSession = Depends(require_admin)):
     """Add a user to the library, optionally creating their Gitea account first.
 
-    Two modes, both ending in a collaborator grant so the user appears in the
-    roster with a real role (`read` -> Browser, promotable to Contributor with
-    the toggle above; `write` -> Bank Approver; repo-owner is not grantable):
+    Two modes, both ending in a collaborator grant (plus contributors-team
+    membership when the role is `contributor`) so the user appears in the roster
+    with a real role. Admin is not grantable here — see _ASSIGNABLE_ROLES:
 
     - **Create + grant** — when `email` and `password` are supplied, first
       `POST /admin/users` to create the account. This is a Gitea *site-admin*
@@ -137,10 +221,20 @@ async def add_user(payload: AddUser, session: UserSession = Depends(require_admi
     username = payload.username.strip()
     if not username:
         raise HTTPException(status_code=400, detail="A username is required.")
-    if payload.permission not in _GRANTABLE_ROLES:
-        raise HTTPException(
-            status_code=400,
-            detail="permission must be 'read' (Browser) or 'write' (Bank Approver).")
+    if payload.role is not None:
+        role = payload.role
+        if role not in _ASSIGNABLE_ROLES:
+            raise HTTPException(
+                status_code=400,
+                detail="role must be 'browser', 'contributor' or 'approver'. "
+                       "Admin is granted in Gitea.")
+    else:
+        permission = payload.permission or "read"
+        if permission not in _GRANTABLE_ROLES:
+            raise HTTPException(
+                status_code=400,
+                detail="permission must be 'read' (Browser) or 'write' (Bank Approver).")
+        role = _PERMISSION_ROLES[permission]
     if username == settings.bot_username:
         raise HTTPException(
             status_code=400,
@@ -153,6 +247,16 @@ async def add_user(payload: AddUser, session: UserSession = Depends(require_admi
         raise HTTPException(
             status_code=400,
             detail="Creating a new account needs both an email and a password.")
+
+    # Resolved before any writes: a missing team should abort the request, not
+    # leave a freshly created account stranded as a plain Browser.
+    team = await _find_team(session.token) if role == "contributor" else None
+    if role == "contributor" and team is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No team named '{CONTRIBUTORS_TEAM}' exists on the "
+                   f"'{settings.repo_owner}' org — create it in Gitea first "
+                   "(scripts/seed.py does this in dev).")
 
     if creating:
         await gitea.api(session.token, "POST", "/admin/users", json={
@@ -167,16 +271,20 @@ async def add_user(payload: AddUser, session: UserSession = Depends(require_admi
     # resets their permission, which is a reasonable "fix their access" action.
     await gitea.api(session.token, "PUT",
                     f"{settings.repo_api}/collaborators/{username}",
-                    json={"permission": payload.permission})
+                    json={"permission": _ASSIGNABLE_ROLES[role]})
 
-    role = _PERMISSION_ROLES[payload.permission]
+    if team is not None:
+        await gitea.api(session.token, "PUT",
+                        f"/teams/{team['id']}/members/{username}")
+
     lead = f"{username} — account created — " if creating else f"{username} "
     return {"message": f"{lead}now has access to the library as a "
-                       f"{_GRANTABLE_ROLES[payload.permission]}."
+                       f"{ROLE_LABELS[role]}."
                        + (" They'll be asked to set a new password on first "
                           "sign-in." if creating and payload.must_change_password
                           else ""),
-            "username": username, "role": role, "created": creating}
+            "username": username, "role": role, "created": creating,
+            "contributor": role == "contributor"}
 
 
 @router.delete("/users/{username}")
