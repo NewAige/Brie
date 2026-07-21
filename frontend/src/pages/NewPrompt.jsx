@@ -3,6 +3,8 @@ import { Link, useLocation } from 'react-router-dom'
 import { useAsyncData } from '../hooks.js'
 import { api } from '../api.js'
 import Icon from '../components/Icon.jsx'
+import AiAssist from '../components/AiAssist.jsx'
+import { buildNewPromptInstructions, NEW_PROMPT_TYPE } from '../aiImport.js'
 import { slugify } from '../utils.js'
 
 const NEW_CATEGORY = '__new__'
@@ -33,6 +35,22 @@ export default function NewPrompt() {
   }, [effectiveCategory, title, knownCategories])
 
   const ready = title.trim().length >= 3 && effectiveCategory.trim() && body.trim()
+
+  // Fill the form from a structured AI result (components/AiAssist.jsx). The
+  // user still reviews and submits through the normal flow below.
+  const applyImport = (data) => {
+    setTitle(data.title)
+    if (knownCategories.has(data.category)) {
+      setCategory(data.category)
+    } else if (data.category) {
+      setCategory(NEW_CATEGORY)
+      setNewCategory(data.category)
+    }
+    setTags(data.tags.join(', '))
+    setIntendedUse(data.intended_use)
+    setTargetModel(data.target_model)
+    setBody(data.body)
+  }
 
   const payload = () => ({
     title: title.trim(),
@@ -111,6 +129,17 @@ export default function NewPrompt() {
           Your copy becomes its own prompt — the original is not changed.
         </div>
       )}
+
+      <AiAssist
+        expectedType={NEW_PROMPT_TYPE}
+        buildInstructions={() =>
+          buildNewPromptInstructions(
+            (cats.data || []).map((c) => c.name),
+            { title, intendedUse, body },
+          )
+        }
+        onImport={applyImport}
+      />
 
       <div className="editor card">
         <label className="field-label" htmlFor="np-title">Title</label>
