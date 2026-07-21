@@ -44,6 +44,20 @@ async def get_index(token: str) -> list[dict]:
 
         semaphore = asyncio.Semaphore(8)
 
+        async def last_updated(path: str) -> str:
+            """ISO timestamp of the newest commit touching this file. Display
+            metadata only — any failure is an empty string, never an error."""
+            try:
+                commits = await gitea.api(
+                    token, "GET", f"{settings.repo_api}/commits",
+                    params={"path": path, "sha": sha, "limit": 1, "stat": "false",
+                            "verification": "false", "files": "false"},
+                )
+                info = (commits[0].get("commit") or {}) if commits else {}
+                return (info.get("author") or {}).get("date") or ""
+            except (HTTPException, LookupError, AttributeError, TypeError):
+                return ""
+
         async def fetch(path: str) -> dict | None:
             async with semaphore:
                 try:
@@ -53,7 +67,9 @@ async def get_index(token: str) -> list[dict]:
                     )
                 except HTTPException:
                     return None
-                return parse_prompt(path, raw)
+                prompt = parse_prompt(path, raw)
+                prompt["updated"] = await last_updated(path)
+                return prompt
 
         prompts = [p for p in await asyncio.gather(*(fetch(p) for p in paths)) if p]
         prompts.sort(key=lambda p: (p["category"], p["title"].lower()))
