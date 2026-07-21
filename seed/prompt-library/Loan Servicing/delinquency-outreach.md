@@ -22,3 +22,6 @@ due. Requirements:
   specific programs or eligibility.
 - Do not mention credit reporting consequences in this first letter.
 - Keep it under 250 words, at an 8th-grade reading level.
+- Use only the details given in the placeholders — never invent amounts,
+  dates, account details, or program specifics.
+- Output only the letter text — no preamble or commentary.
