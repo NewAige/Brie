@@ -21,6 +21,7 @@ from .. import forks, gitea, prompt_index, roles
 from ..deps import UserSession, require_contributor
 from ..frontmatter import parse_prompt, render_prompt, replace_body
 from ..paths import is_prompt_file, slugify
+from . import pulls
 from .prompts import NewPrompt
 
 router = APIRouter(prefix="/api/drafts")
@@ -316,15 +317,21 @@ async def publish_draft(path: str, publish: PublishRequest,
         pr_title=f"New prompt: {prompt['title']}",
         pr_body=(prompt["intended_use"] or "New prompt.") + origin,
     )
-    # Community publishes are self-mergeable, so the PR is a step on the way in
-    # rather than a wait for someone — say so, and point at the button that
-    # finishes the job.
-    message = ("Your prompt is ready to publish — open it under Suggestions "
-               "and publish it to the library."
-               if publish.level == "community" else
-               "Your draft has been sent to a Bank Approver for review.")
+    # Community publishes are self-mergeable, so finish them here — the PR was
+    # only ever a step on the way in. Bank publishes are the case that really
+    # does wait for someone, and try_publish_now refuses them anyway.
+    published = False
+    if publish.level == "community":
+        published = await pulls.try_publish_now(session, pr["number"])
+    if published:
+        message = "Published. Your prompt is live in the Community library."
+    elif publish.level == "community":
+        message = ("Your prompt is ready to publish — open it under "
+                   "Suggestions and publish it to the library.")
+    else:
+        message = "Your draft has been sent to a Bank Approver for review."
     return {"message": message, "id": pr["number"], "path": path,
-            "level": publish.level}
+            "level": publish.level, "published": published}
 
 
 # --- helpers ----------------------------------------------------------------

@@ -12,6 +12,7 @@ from ..config import settings
 from ..deps import UserSession, current_session, require_contributor
 from ..frontmatter import parse_prompt, render_prompt, replace_body, split_front_matter
 from ..paths import is_prompt_file, slugify
+from . import pulls
 
 router = APIRouter(prefix="/api", dependencies=[Depends(current_session)])
 
@@ -219,9 +220,16 @@ async def create_prompt(new: NewPrompt,
         pr_title=f"New prompt: {new.title.strip()}",
         pr_body=(new.intended_use or "New prompt.") + origin,
     )
-    return {"message": "Your prompt is ready to publish — open it under "
-                       "Suggestions and publish it to the library.",
-            "id": pr["number"], "path": path, "level": "community"}
+    # New community prompts are self-mergeable by their author, so finish the
+    # job here rather than leaving a PR the author must go and click again.
+    # If that does not land, the PR stays open and Suggestions still works.
+    published = await pulls.try_publish_now(session, pr["number"])
+    message = ("Published. Your prompt is live in the Community library."
+               if published else
+               "Your prompt is ready to publish — open it under "
+               "Suggestions and publish it to the library.")
+    return {"message": message, "id": pr["number"], "path": path,
+            "level": "community", "published": published}
 
 
 @router.put("/prompts/{path:path}/favorite")

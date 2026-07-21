@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useAsyncData, useUser } from '../hooks.js'
+import { useAsyncData } from '../hooks.js'
 import { api } from '../api.js'
 import CommitHistory from '../components/CommitHistory.jsx'
 import CopyButton from '../components/CopyButton.jsx'
@@ -59,19 +59,15 @@ const metaOf = (draft) => ({
 })
 
 function DraftItem({ draft, onChanged }) {
-  const user = useUser()
-  // Only a Bank Approver may put a prompt in the Bank tier, so everyone else
-  // gets a straight Community publish with no level to choose. The backend
-  // enforces this too — hiding the option is only so the UI doesn't offer
-  // something that would 403.
-  const canPublishToBank = user.role === 'approver' || user.role === 'admin'
+  // Publishing a draft always goes to Community — for approvers too. Bank is
+  // not a choice made at creation time: a prompt earns it by being raised from
+  // Community afterwards by a Bank Approver, so there is no level to pick here.
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [body, setBody] = useState(draft.body)
   const [meta, setMeta] = useState(() => metaOf(draft))
   const [tagText, setTagText] = useState(draft.tags.join(', '))
   const [publishing, setPublishing] = useState(false)
-  const [level, setLevel] = useState('community')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -123,9 +119,7 @@ function DraftItem({ draft, onChanged }) {
   }
   const publish = () => {
     setPublishing(false)
-    // Community unless the user is actually allowed to pick Bank.
-    run(() => api.publishDraft(draft.path,
-                               canPublishToBank ? level : 'community'), true)
+    run(() => api.publishDraft(draft.path, 'community'), true)
   }
   const remove = () => {
     if (!window.confirm('Delete this draft? This cannot be undone.')) return
@@ -262,42 +256,15 @@ function DraftItem({ draft, onChanged }) {
 
           {publishing && (
             <div className="card publish-card">
-              {canPublishToBank ? (
-                <>
-                  <div className="field-label">Publish at which level?</div>
-                  <label className="publish-option">
-                    <input
-                      type="radio"
-                      name={`level-${draft.path}`}
-                      checked={level === 'community'}
-                      onChange={() => setLevel('community')}
-                    />
-                    <span>
-                      <strong>Community</strong> — its owner maintains it, no approver needed.
-                    </span>
-                  </label>
-                  <label className="publish-option">
-                    <input
-                      type="radio"
-                      name={`level-${draft.path}`}
-                      checked={level === 'bank'}
-                      onChange={() => setLevel('bank')}
-                    />
-                    <span>
-                      <strong>Bank</strong> — every future change needs a Bank Approver.
-                    </span>
-                  </label>
-                </>
-              ) : (
-                <p className="muted small">
-                  This goes to the <strong>Community</strong> library with you as its
-                  owner — no approver needed. Later edits by anyone else come back
-                  to you to publish. Only a Bank Approver can raise a prompt to Bank.
-                </p>
-              )}
+              <p className="muted small">
+                This goes to the <strong>Community</strong> library with you as its
+                owner — no approver needed. Later edits by anyone else come back
+                to you to publish. A Bank Approver can raise it to Bank once
+                it&apos;s live.
+              </p>
               <div className="editor-actions">
                 <button className="btn btn-primary" onClick={publish} disabled={busy}>
-                  {canPublishToBank && level === 'bank' ? 'Send for review' : 'Publish'}
+                  Publish
                 </button>
                 <button className="btn btn-quiet" onClick={() => setPublishing(false)}>
                   Cancel

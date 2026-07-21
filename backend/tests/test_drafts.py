@@ -8,18 +8,46 @@ the chosen level into the front-matter.
 """
 
 import base64
+import dataclasses
 
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from app import gitea, prompt_index, roles
+from app import gitea, ownership, prompt_index, roles
 from app.config import settings
 from app.deps import UserSession, current_session
 from app.main import app
+from app.routers import pulls
 
 UMA = "uma.user"
 FORK_FULL = f"{UMA}/{settings.repo_name}"
+
+
+def _allow(path: str, username: str):
+    """Stub `owner_mergeable` into an allow for `path` — the auto-publish
+    tests are about what the router does with the verdict, not about
+    re-deriving it (test_ownership.py owns that)."""
+    async def fake(token, user, pr_id):
+        return ownership.Decision(True, "test allow", (path,), username)
+    return fake
+
+
+def _enable_owner_merge(monkeypatch):
+    """Owner-merge is off unless a bot credential is configured, and conftest
+    configures none — so the auto-publish path needs one to be reachable.
+    Settings is frozen, so swap in a copy carrying bot credentials."""
+    monkeypatch.setattr(
+        pulls, "settings",
+        dataclasses.replace(settings, bot_username="prompt-bot",
+                            bot_token="bot-token"))
+
+
+def _record_merge(sink: list):
+    async def fake(session, pr_id, decision):
+        sink.append(pr_id)
+        return {"message": "Published. Your change is live."}
+    return fake
 
 DRAFT_PATH = "customer-support/escalation-email-tone.md"
 DRAFT_CONTENT = """---
@@ -411,6 +439,66 @@ def test_publish_rejects_junk_level(fake, make_client):
     with make_client() as client:
         resp = client.post(f"/api/drafts/{DRAFT_PATH}/publish", json={"level": "secret"})
     assert resp.status_code == 422
+
+
+# --- auto-publish (community lands without a second click) -------------------
+
+def test_publish_community_merges_immediately(fake, make_client, monkeypatch):
+    """"Publish to Community" must actually publish. The PR is an
+    implementation detail, so a self-mergeable one is merged here and now
+    rather than parked in Suggestions for a click with one possible outcome."""
+    fake.draft_files[DRAFT_PATH] = DRAFT_CONTENT
+    merged = []
+    _enable_owner_merge(monkeypatch)
+    monkeypatch.setattr(pulls.ownership, "owner_mergeable",
+                        _allow(DRAFT_PATH, UMA))
+    monkeypatch.setattr(pulls, "_owner_merge",
+                        _record_merge(merged))
+    with make_client() as client:
+        resp = client.post(f"/api/drafts/{DRAFT_PATH}/publish",
+                           json={"level": "community"})
+    assert resp.status_code == 200
+    assert resp.json()["published"] is True
+    assert merged == [7], "community publish did not merge its own PR"
+    assert "live in the Community library" in resp.json()["message"]
+
+
+def test_publish_bank_never_auto_merges(fake, make_client, monkeypatch):
+    """Bank is the tier that genuinely waits for a second pair of eyes. Even
+    for an approver — who may *request* Bank — publishing must not merge it."""
+    fake.draft_files[DRAFT_PATH] = DRAFT_CONTENT
+    merged = []
+    _enable_owner_merge(monkeypatch)
+    monkeypatch.setattr(pulls.ownership, "owner_mergeable",
+                        _allow(DRAFT_PATH, UMA))
+    monkeypatch.setattr(pulls, "_owner_merge", _record_merge(merged))
+    with make_client("approver") as client:
+        resp = client.post(f"/api/drafts/{DRAFT_PATH}/publish", json={"level": "bank"})
+    assert resp.status_code == 200
+    assert resp.json()["published"] is False
+    assert merged == [], "a bank publish must never merge itself"
+    assert "Bank Approver" in resp.json()["message"]
+
+
+def test_publish_falls_back_to_pr_when_merge_fails(fake, make_client, monkeypatch):
+    """A failed auto-merge must not lose the prompt: the PR stays open and the
+    user is pointed at Suggestions, exactly as before."""
+    fake.draft_files[DRAFT_PATH] = DRAFT_CONTENT
+
+    async def boom(session, pr_id, decision):
+        raise RuntimeError("gitea exploded")
+
+    _enable_owner_merge(monkeypatch)
+    monkeypatch.setattr(pulls.ownership, "owner_mergeable",
+                        _allow(DRAFT_PATH, UMA))
+    monkeypatch.setattr(pulls, "_owner_merge", boom)
+    with make_client() as client:
+        resp = client.post(f"/api/drafts/{DRAFT_PATH}/publish",
+                           json={"level": "community"})
+    assert resp.status_code == 200
+    assert resp.json()["published"] is False
+    assert resp.json()["id"] == 7
+    assert "Suggestions" in resp.json()["message"]
 
 
 def test_publish_409_when_path_exists_on_main(fake, make_client):
