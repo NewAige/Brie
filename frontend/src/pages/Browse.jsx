@@ -31,7 +31,7 @@ export default function Browse() {
     return [...tags].sort()
   }, [prompts.data, tag])
 
-  // Unstarring while viewing favourites would normally make the card vanish
+  // Unstarring while viewing favorites would normally make the card vanish
   // mid-click, which is hostile if it was a misclick. Instead we keep the card
   // in place (its star just goes hollow) and let the next fetch drop it, so an
   // immediate re-click undoes the mistake.
@@ -41,7 +41,7 @@ export default function Browse() {
     )
   }
 
-  // Distinguishes "you have no favourites at all" from "your favourites exist
+  // Distinguishes "you have no favorites at all" from "your favorites exist
   // but nothing here matches the other filters" — different advice each way.
   const onlyFavoritesNarrowed = Boolean(debounced || category || tag || mine)
 
@@ -108,7 +108,7 @@ export default function Browse() {
           onClick={() => setFavorites(!favorites)}
           aria-pressed={favorites}
         >
-          <Icon name="star" size={15} filled={favorites} /> Favourites
+          <Icon name="star" size={15} filled={favorites} /> Favorites
         </button>
         <button
           className={`toggle ${mine ? 'toggle-on' : ''}`}
@@ -147,7 +147,7 @@ export default function Browse() {
           <Icon name={favorites ? 'star' : 'search'} />
           {favorites && !onlyFavoritesNarrowed ? (
             <>
-              <strong>No favourites yet</strong>
+              <strong>No favorites yet</strong>
               <span>Star a prompt from any card or its page to find it here later.</span>
             </>
           ) : mine && !debounced && !category && !tag && !favorites ? (

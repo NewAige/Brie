@@ -1,0 +1,258 @@
+/* Brie sign-in re-skin for Gitea.
+ *
+ * WHY THIS EXISTS
+ * The app (frontend/src/pages/Login.jsx) shows a branded "Brie" screen, but the
+ * OAuth2 Authorization Code flow then hands the browser to Gitea's own hosted
+ * login page to collect the password — by design, so the app never sees it
+ * (see CLAUDE.md invariants + backend/app/routers/auth.py). That page is where
+ * the "Gitea" branding leaks through to staff.
+ *
+ * This stylesheet restyles ONLY Gitea's sign-in page so it matches the Brie
+ * login card, and hides Gitea's nav/footer/branding on it. It changes nothing
+ * about authentication itself: no template logic, no flow, no security model.
+ *
+ * Tokens are copied verbatim from frontend/src/styles.css (:root) so the two
+ * screens stay visually identical. If the app's palette changes, update both.
+ *
+ * Loaded via templates/custom/header.tmpl (Gitea's end-of-<head> hook), so it
+ * wins over Gitea's own stylesheets. Scoped to .page-content.user.signin — the
+ * stable sign-in wrapper — so no other Gitea page is affected.
+ */
+
+:root {
+  --brie-accent: #006f51;
+  --brie-accent-strong: #00563e;
+  --brie-accent-soft: #e6f2ee;
+  --brie-navy-900: #05251c;
+  --brie-navy-800: #083326;
+  --brie-navy-700: #0d4936;
+  --brie-ink: #20333f;
+  --brie-surface: #ffffff;
+  --brie-surface-sunken: #f8fafc;
+  --brie-border: #e2e7f0;
+  --brie-border-strong: #c9d2e0;
+  --brie-text: #1c2534;
+  --brie-text-secondary: #46536a;
+  --brie-muted: #64748b;
+  --brie-red: #b3261e;
+  --brie-red-bg: #fceceb;
+  --brie-red-border: #f3cdca;
+  --brie-radius-sm: 8px;
+  --brie-radius: 12px;
+  --brie-radius-lg: 16px;
+  --brie-shadow-lg: 0 4px 8px rgba(12, 31, 63, 0.08), 0 20px 48px rgba(12, 31, 63, 0.16);
+  --brie-ease: cubic-bezier(0.2, 0.6, 0.3, 1);
+  --brie-font: "Source Sans 3", "Source Sans Pro", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ---- Only touch the page when our sign-in marker is present ---------------
+ * header.tmpl adds <body> class `brie-auth` on the sign-in route (and only
+ * there). Everything below is guarded by it, so admin/other Gitea pages that
+ * an operator might visit keep Gitea's normal look. */
+
+body.brie-auth {
+  background:
+    radial-gradient(1100px 520px at 85% -10%, rgba(0, 138, 101, 0.35), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(0, 138, 101, 0.28), transparent 55%),
+    linear-gradient(160deg, var(--brie-navy-900) 0%, var(--brie-navy-800) 55%, var(--brie-navy-700) 100%)
+    fixed;
+  font-family: var(--brie-font);
+  min-height: 100vh;
+}
+
+/* Hide every scrap of Gitea chrome on the sign-in page: top navbar, footer,
+ * the default heading bar, the "powered by" line, language/theme switchers. */
+body.brie-auth .page-header,
+body.brie-auth #navbar,
+body.brie-auth .ui.secondary.menu.navbar,
+body.brie-auth nav.navbar,
+body.brie-auth .page-footer,
+body.brie-auth footer,
+body.brie-auth .footer,
+body.brie-auth .ui.top.attached.header,
+body.brie-auth .divider.divider-text,
+body.brie-auth .oauth-login-link {
+  display: none !important;
+}
+
+/* Center the card in the viewport, matching .login-screen. */
+body.brie-auth .full.height,
+body.brie-auth .page-content.user.signin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 1.5rem;
+  background: transparent !important;
+}
+
+/* Collapse Gitea's grid so it doesn't fight the flex centering. */
+body.brie-auth .page-content.user.signin .ui.middle.page.grid,
+body.brie-auth .page-content.user.signin .ui.grid {
+  margin: 0;
+  width: 100%;
+  max-width: none;
+  display: block;
+}
+
+/* The Brie card — mirrors .login-card. Gitea's grid COLUMN is the white card;
+ * it holds our injected brand block plus Gitea's form segment. Force the
+ * surface + text colors so this reads identically whether Gitea resolved to
+ * its light or dark theme (headless/OS dark mode must not darken the card). */
+body.brie-auth .page-content.user.signin .column {
+  background: var(--brie-surface) !important;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: var(--brie-radius-lg);
+  padding: 2.25rem 2.25rem 2rem;
+  width: min(430px, 100%);
+  max-width: 430px;
+  margin: 0 auto !important;
+  box-shadow: var(--brie-shadow-lg);
+  text-align: center;
+  color: var(--brie-text);
+  animation: brie-login-in 0.45s var(--brie-ease);
+}
+
+/* Gitea nests the form inside `.ui.container.fluid` > `.ui.attached.segment`.
+ * Those carry their own (theme-colored) background, border and rounding, which
+ * is the dark inner box seen before the fix. Flatten them into the card. */
+body.brie-auth .page-content.user.signin .ui.container.fluid,
+body.brie-auth .page-content.user.signin .ui.attached.segment {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+@keyframes brie-login-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.99); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Brand block injected by header.tmpl (logo + wordmark + tagline + subhead). */
+.brie-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 1.4rem;
+}
+.brie-brand svg { display: block; }
+.brie-brand-name {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--brie-ink);
+  line-height: 1;
+}
+.brie-brand-tagline {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--brie-accent);
+  line-height: 1;
+}
+.brie-subhead {
+  margin: 0 0 1.3rem;
+  color: var(--brie-text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+/* Form + fields — mirror the app's inputs. */
+body.brie-auth .page-content.user.signin form.ui.form {
+  text-align: left;
+}
+body.brie-auth .page-content.user.signin .field > label {
+  color: var(--brie-text) !important;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.35rem;
+}
+/* Semantic-UI marks required fields with a red asterisk via ::after on the
+ * label. Off-brand here (the form is self-evidently required) — remove it. */
+body.brie-auth .page-content.user.signin .required.field > label::after {
+  display: none !important;
+}
+body.brie-auth .page-content.user.signin .field input:not([type="checkbox"]) {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--brie-border-strong);
+  border-radius: var(--brie-radius-sm);
+  background: var(--brie-surface);
+  color: var(--brie-text);
+  font: inherit;
+  font-size: 0.98rem;
+  transition: border-color 0.15s var(--brie-ease), box-shadow 0.15s var(--brie-ease);
+}
+body.brie-auth .page-content.user.signin .field input:not([type="checkbox"]):focus {
+  outline: none;
+  border-color: var(--brie-accent);
+  box-shadow: 0 0 0 3px var(--brie-accent-soft);
+}
+
+/* "Remember me" — keep it, quiet it down. */
+body.brie-auth .page-content.user.signin .inline.field .ui.checkbox label {
+  color: var(--brie-text-secondary);
+  font-size: 0.9rem;
+}
+
+/* Primary submit — mirror .btn-primary.btn-large.btn-block. */
+body.brie-auth .page-content.user.signin .ui.primary.button {
+  width: 100%;
+  justify-content: center;
+  padding: 0.65rem 1.5rem;
+  font-size: 1.02rem;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1px solid var(--brie-accent-strong);
+  color: #fff;
+  background: linear-gradient(180deg, #007a59 0%, var(--brie-accent) 100%);
+  box-shadow: 0 1px 2px rgba(0, 86, 62, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: background 0.15s var(--brie-ease), box-shadow 0.15s var(--brie-ease),
+    transform 0.1s var(--brie-ease);
+  margin-top: 0.4rem;
+}
+body.brie-auth .page-content.user.signin .ui.primary.button:hover {
+  background: linear-gradient(180deg, #006549 0%, var(--brie-accent-strong) 100%);
+  box-shadow: 0 2px 8px rgba(0, 86, 62, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+body.brie-auth .page-content.user.signin .ui.primary.button:active {
+  transform: translateY(1px);
+}
+
+/* Forgot-password link — muted, matches the app's small print. */
+body.brie-auth .page-content.user.signin a[href$="/user/forgot_password"] {
+  color: var(--brie-muted);
+  font-size: 0.85rem;
+}
+body.brie-auth .page-content.user.signin a[href$="/user/forgot_password"]:hover {
+  color: var(--brie-accent-strong);
+}
+
+/* Gitea flash/error messages — recolor to the app's alert-error. */
+body.brie-auth .page-content.user.signin .ui.negative.message,
+body.brie-auth .flash-error,
+body.brie-auth .ui.error.message {
+  background: var(--brie-red-bg);
+  border: 1px solid var(--brie-red-border);
+  color: var(--brie-red);
+  border-radius: var(--brie-radius-sm);
+  box-shadow: none;
+  font-size: 0.9rem;
+}
+
+/* Reassurance line injected after the form (mirrors the app's small print). */
+.brie-footnote {
+  margin: 1.2rem 0 0;
+  color: var(--brie-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  text-align: center;
+}

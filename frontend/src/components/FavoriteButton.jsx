@@ -7,7 +7,7 @@ import Icon from './Icon.jsx'
 // Optimistic: the star flips immediately and rolls back if the request fails,
 // because marking is a low-stakes personal bookmark — waiting on a round trip
 // to redraw an icon feels broken. `onChange` lets a parent (the Library page
-// filtered to favourites) drop the row once it is unmarked.
+// filtered to favorites) drop the row once it is unmarked.
 export default function FavoriteButton({ path, favorited, onChange, large = false }) {
   const [marked, setMarked] = useState(favorited)
   const [busy, setBusy] = useState(false)
@@ -34,7 +34,7 @@ export default function FavoriteButton({ path, favorited, onChange, large = fals
     }
   }
 
-  const label = marked ? 'Remove from favourites' : 'Save to favourites'
+  const label = marked ? 'Remove from favorites' : 'Save to favorites'
   return (
     <button
       type="button"
@@ -45,7 +45,7 @@ export default function FavoriteButton({ path, favorited, onChange, large = fals
       aria-label={large ? undefined : label}
     >
       <Icon name="star" size={large ? 16 : 15} filled={marked} />
-      {large && <span>{marked ? 'Favourited' : 'Favourite'}</span>}
+      {large && <span>{marked ? 'Favorited' : 'Favorite'}</span>}
     </button>
   )
 }

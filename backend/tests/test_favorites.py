@@ -1,4 +1,4 @@
-"""Favourites: per-user marks on library prompts, and the two personal filters
+"""Favorites: per-user marks on library prompts, and the two personal filters
 on the browse endpoint (`favorites=`, `mine=`).
 
 The prompt index is faked so the tests exercise the real filtering loop in
@@ -165,14 +165,14 @@ def test_filters_compose_with_each_other_and_with_search(client):
     client.put(f"/api/prompts/{FAVE}/favorite")
     client.put(f"/api/prompts/{MINE}/favorite")
 
-    # favourites ∩ mine
+    # favorites ∩ mine
     assert paths(client.get("/api/prompts?favorites=true&mine=true")) == [MINE]
-    # favourites ∩ category
+    # favorites ∩ category
     assert paths(client.get(
         "/api/prompts?favorites=true&category=customer-support")) == [FAVE, MINE]
-    # favourites ∩ tag
+    # favorites ∩ tag
     assert paths(client.get("/api/prompts?favorites=true&tag=support")) == [FAVE, MINE]
-    # favourites ∩ full-text search
+    # favorites ∩ full-text search
     assert paths(client.get("/api/prompts?favorites=true&q=escalation")) == [MINE]
 
 
