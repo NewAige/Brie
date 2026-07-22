@@ -21,6 +21,10 @@ const COLUMNS = [
   { key: 'actions', label: 'Actions', hiddenLabel: true },
 ]
 
+// Tags stack and wrap in a narrow column, so rows with many tags get noisy.
+// Show only the first few by default; the rest expand per-row on demand.
+const TAG_LIMIT = 2
+
 function compare(a, b, key) {
   if (key === 'updated') {
     // ISO timestamps compare lexically; missing dates sink to the bottom.
@@ -52,6 +56,12 @@ export default function PromptTable({ prompts, loading, onTagClick, activeTag, o
   // path -> 'copied' | 'failed', for per-row copy feedback.
   const [copyState, setCopyState] = useState({})
   const copyTimers = useRef({})
+  // path -> true when that row's tags are expanded past TAG_LIMIT.
+  const [expandedTags, setExpandedTags] = useState({})
+
+  const toggleTags = (path) => {
+    setExpandedTags((s) => ({ ...s, [path]: !s[path] }))
+  }
 
   const rows = useMemo(() => {
     const list = [...(prompts || [])]
@@ -139,7 +149,7 @@ export default function PromptTable({ prompts, loading, onTagClick, activeTag, o
                   </td>
                   <td className="pt-col-tags">
                     <span className="tags">
-                      {p.tags.map((tag) => (
+                      {(expandedTags[p.path] ? p.tags : p.tags.slice(0, TAG_LIMIT)).map((tag) => (
                         <button
                           key={tag}
                           className={`tag ${tag === activeTag ? 'tag-active' : ''}`}
@@ -148,6 +158,16 @@ export default function PromptTable({ prompts, loading, onTagClick, activeTag, o
                           {tag}
                         </button>
                       ))}
+                      {p.tags.length > TAG_LIMIT && (
+                        <button
+                          type="button"
+                          className="tag tag-more"
+                          aria-expanded={!!expandedTags[p.path]}
+                          onClick={() => toggleTags(p.path)}
+                        >
+                          {expandedTags[p.path] ? 'Show less' : `+${p.tags.length - TAG_LIMIT} more`}
+                        </button>
+                      )}
                     </span>
                   </td>
                   <td className="pt-col-level">
@@ -177,7 +197,7 @@ export default function PromptTable({ prompts, loading, onTagClick, activeTag, o
                         size={16}
                       />
                     </button>
-                    <Link className="btn btn-sm" to={`/prompt/${p.path}`}>Use</Link>
+                    <Link className="btn btn-sm" to={`/prompt/${p.path}`}>Details</Link>
                   </td>
                 </tr>
               ))}
