@@ -17,6 +17,12 @@ export default function Suggestions() {
   const needsReview = (data || []).filter((pr) => pr.needs_your_review)
   const shown = onlyMine && tab === 'open' ? needsReview : data
 
+  const decided = () => {
+    // Let the nav badge refresh right away, then reload the list.
+    window.dispatchEvent(new Event('suggestions-changed'))
+    setRefresh((n) => n + 1)
+  }
+
   return (
     <div>
       <div className="page-head">
@@ -41,7 +47,8 @@ export default function Suggestions() {
 
       {canApprove && tab === 'open' && (data || []).length > 0 && (
         <p className="muted">
-          You’re an approver — review each change below and publish it when it looks right.
+          You’re an approver — review each change below, accept all of it or just the parts
+          that look right, or decline it.
         </p>
       )}
 
@@ -73,7 +80,7 @@ export default function Suggestions() {
             canPublishAsOwner={pr.state === 'open' && !!pr.owner_mergeable}
             isPeerSuggestion={!!pr.needs_your_review}
             isOwn={pr.author === user.username}
-            onMerged={() => setRefresh((n) => n + 1)}
+            onDecided={decided}
           />
         ))}
       </div>
@@ -81,37 +88,102 @@ export default function Suggestions() {
   )
 }
 
-function SuggestionItem({ pr, canApprove, canPublishAsOwner, isPeerSuggestion, isOwn, onMerged }) {
+function stateBadge(pr) {
+  if (pr.state === 'merged') return { cls: 'badge-approved', label: 'Published' }
+  if (pr.outcome === 'partial') return { cls: 'badge-partial', label: 'Partly published' }
+  return { cls: 'badge-deprecated', label: 'Declined' }
+}
+
+function SuggestionItem({ pr, canApprove, canPublishAsOwner, isPeerSuggestion, isOwn, onDecided }) {
+  const canDecide = canApprove || canPublishAsOwner
   const [open, setOpen] = useState(false)
-  const [diff, setDiff] = useState(null)
+  // `view` is { review } for deciders (per-change checkboxes) or { diff }
+  // as the read-only / fallback rendering.
+  const [view, setView] = useState(null)
+  const [selected, setSelected] = useState({}) // "path:hunkIndex" -> bool
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
+  const [declining, setDeclining] = useState(false)
+  const [note, setNote] = useState('')
 
   const toggle = async () => {
     setOpen(!open)
-    if (!open && diff === null) {
+    if (open || view !== null) return
+    if (canDecide) {
       try {
-        const res = await api.pullDiff(pr.id)
-        setDiff(res.diff)
-      } catch (err) {
-        setDiff(`Could not load the change: ${err.message}`)
+        const review = await api.pullReview(pr.id)
+        const initial = {}
+        review.files.forEach((f) =>
+          f.hunks.forEach((h) => { initial[`${f.path}:${h.index}`] = true })
+        )
+        setSelected(initial)
+        setView({ review })
+        return
+      } catch {
+        // Too large/complex for per-change review — fall back to the plain
+        // diff below; publish-all and decline still work.
       }
+    }
+    try {
+      const res = await api.pullDiff(pr.id)
+      setView({ diff: res.diff })
+    } catch (err) {
+      setView({ diff: `Could not load the change: ${err.message}` })
     }
   }
 
-  const approve = async () => {
+  const review = view?.review
+  const total = review ? review.files.reduce((n, f) => n + f.hunks.length, 0) : 0
+  const accepted = review ? Object.values(selected).filter(Boolean).length : 0
+  const partial = review && accepted < total
+
+  const finish = (message) => {
+    setDone(message)
+    setTimeout(onDecided, 1200)
+  }
+
+  const publish = async () => {
     setBusy(true)
     setError(null)
     try {
-      const res = await api.merge(pr.id)
-      setDone(res.message)
-      setTimeout(onMerged, 1200)
+      if (!partial) {
+        finish((await api.merge(pr.id)).message)
+      } else {
+        const files = review.files.map((f) => ({
+          path: f.path,
+          hunks: f.hunks.filter((h) => selected[`${f.path}:${h.index}`]).map((h) => h.index),
+        }))
+        finish((await api.pullApply(pr.id, {
+          head_sha: review.head_sha,
+          base_sha: review.base_sha,
+          files,
+        })).message)
+      }
     } catch (err) {
       setError(err.message)
       setBusy(false)
     }
   }
+
+  const decline = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      finish((await api.pullDecline(pr.id, note.trim())).message)
+    } catch (err) {
+      setError(err.message)
+      setBusy(false)
+    }
+  }
+
+  const publishLabel = partial
+    ? `Publish ${accepted} of ${total} changes`
+    : canPublishAsOwner
+      ? (isPeerSuggestion ? 'Approve & publish' : 'Publish')
+      : 'Approve & publish'
+
+  const badge = pr.state !== 'open' ? stateBadge(pr) : null
 
   return (
     <div className="card history-item">
@@ -120,11 +192,7 @@ function SuggestionItem({ pr, canApprove, canPublishAsOwner, isPeerSuggestion, i
           {pr.title}
           {isOwn && <span className="own-chip">yours</span>}
           {isPeerSuggestion && <span className="own-chip">needs your review</span>}
-          {pr.state !== 'open' && (
-            <span className={`badge ${pr.state === 'merged' ? 'badge-approved' : 'badge-deprecated'}`}>
-              {pr.state === 'merged' ? 'Published' : 'Declined'}
-            </span>
-          )}
+          {badge && <span className={`badge ${badge.cls}`}>{badge.label}</span>}
         </span>
         <span className="history-meta">
           {pr.author_name} · {new Date(pr.created_at).toLocaleString()}
@@ -133,37 +201,128 @@ function SuggestionItem({ pr, canApprove, canPublishAsOwner, isPeerSuggestion, i
       {open && (
         <div className="history-diff">
           {pr.note && <p className="history-note"><strong>Note:</strong> {pr.note}</p>}
-          {diff === null
-            ? <div className="spinner-row small"><span className="spinner" /> Loading change…</div>
-            : <DiffView diff={diff} />}
+          {view === null && <div className="spinner-row small"><span className="spinner" /> Loading change…</div>}
+          {view?.diff !== undefined && <DiffView diff={view.diff} />}
+          {review && (
+            <ReviewHunks
+              review={review}
+              selected={selected}
+              locked={busy || !!done}
+              onToggle={(key) => setSelected((s) => ({ ...s, [key]: !s[key] }))}
+            />
+          )}
           {error && <div className="alert alert-error">{error}</div>}
           {done && <div className="alert alert-success">{done}</div>}
-          {(canApprove || canPublishAsOwner) && !done && (
-            <div className="editor-actions">
-              <button className="btn btn-primary" onClick={approve} disabled={busy}>
-                {busy
-                  ? 'Publishing…'
-                  : canPublishAsOwner
-                    ? (isPeerSuggestion ? 'Approve & publish' : 'Publish')
-                    : 'Approve & publish'}
-              </button>
-              {canPublishAsOwner ? (
-                <span className="muted small">
-                  {isPeerSuggestion
-                    ? `${pr.author_name} suggested this change to a prompt you maintain — approving publishes it immediately.`
-                    : 'You own this prompt — publishing applies your change immediately.'}
-                </span>
-              ) : (
-                isOwn && (
+          {canDecide && !done && view !== null && (
+            <>
+              <div className="editor-actions">
+                <button
+                  className="btn btn-primary"
+                  onClick={publish}
+                  disabled={busy || (review && accepted === 0)}
+                >
+                  {busy ? 'Working…' : publishLabel}
+                </button>
+                <button
+                  className="btn btn-quiet btn-decline"
+                  onClick={() => setDeclining((d) => !d)}
+                  disabled={busy}
+                >
+                  Decline…
+                </button>
+                {review && accepted === 0 ? (
                   <span className="muted small">
-                    This is your own suggestion — another approver may need to review it.
+                    No changes selected — decline the suggestion instead.
                   </span>
-                )
+                ) : canPublishAsOwner ? (
+                  <span className="muted small">
+                    {isPeerSuggestion
+                      ? `${pr.author_name} suggested this change to a prompt you maintain — approving publishes it immediately.`
+                      : 'You own this prompt — publishing applies your change immediately.'}
+                  </span>
+                ) : (
+                  isOwn && (
+                    <span className="muted small">
+                      This is your own suggestion — another approver may need to review it.
+                    </span>
+                  )
+                )}
+              </div>
+              {declining && (
+                <div className="decline-box">
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="Why is this being declined? (optional — shared with the author)"
+                    disabled={busy}
+                  />
+                  <div className="editor-actions">
+                    <button className="btn btn-danger" onClick={decline} disabled={busy}>
+                      {busy ? 'Working…' : 'Decline suggestion'}
+                    </button>
+                    {partial && accepted > 0 && (
+                      <span className="muted small">
+                        Declining rejects the whole suggestion — use “{publishLabel}” to keep the parts you ticked.
+                      </span>
+                    )}
+                  </div>
+                </div>
               )}
+            </>
+          )}
+          {!canDecide && isOwn && pr.state === 'open' && !done && view !== null && (
+            <div className="editor-actions">
+              <button className="btn btn-quiet btn-decline" onClick={decline} disabled={busy}>
+                {busy ? 'Working…' : 'Withdraw suggestion'}
+              </button>
+              <span className="muted small">
+                This is your suggestion — withdrawing takes it out of the review queue.
+              </span>
             </div>
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// The suggestion's edits, one card per change, each acceptable on its own.
+function ReviewHunks({ review, selected, locked, onToggle }) {
+  const files = review.files.filter((f) => f.hunks.length > 0)
+  if (files.length === 0) return <div className="muted small">No changes.</div>
+  const showPaths = review.files.length > 1
+  return (
+    <div>
+      {files.map((f) => (
+        <div key={f.path}>
+          {showPaths && (
+            <div className="hunk-file">
+              {f.path}
+              {f.status === 'added' && <span className="own-chip">new prompt</span>}
+              {f.status === 'removed' && <span className="own-chip">removed</span>}
+            </div>
+          )}
+          {f.hunks.map((h) => {
+            const key = `${f.path}:${h.index}`
+            const on = !!selected[key]
+            return (
+              <div key={key} className={`hunk ${on ? '' : 'hunk-skipped'}`}>
+                <label className="hunk-head">
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={() => onToggle(key)}
+                    disabled={locked}
+                  />
+                  <span>{on ? 'Accept this change' : 'Change declined'}</span>
+                  <span className="hunk-counts">+{h.added} −{h.removed}</span>
+                </label>
+                <DiffView diff={h.lines.join('\n')} />
+              </div>
+            )
+          })}
+        </div>
+      ))}
     </div>
   )
 }

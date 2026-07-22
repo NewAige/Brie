@@ -18,6 +18,12 @@ the single source of truth):
                  the user's own data, shown back only to them, and useless
                  without knowing whose it is. Not analytics — nothing aggregates
                  across users, and it is deleted when the user unmarks it.
+- suggestion_outcomes: how a closed suggestion was decided — declined outright,
+                 or partially published (some changes accepted, the rest
+                 declined). Gitea only knows "closed", so without this the
+                 Decided list would show a half-accepted suggestion as plain
+                 "Declined". Records the deciding user: like owner_merges it is
+                 a record of a review decision, and "who decided" is the point.
 """
 
 import os
@@ -55,6 +61,14 @@ CREATE TABLE IF NOT EXISTS owner_merges (
     kind      TEXT NOT NULL DEFAULT 'self'
 );
 CREATE INDEX IF NOT EXISTS idx_owner_merges_ts ON owner_merges(ts);
+CREATE TABLE IF NOT EXISTS suggestion_outcomes (
+    pr_id     INTEGER PRIMARY KEY,
+    outcome   TEXT NOT NULL,             -- 'declined' | 'partial'
+    actor     TEXT NOT NULL,
+    pr_author TEXT NOT NULL DEFAULT '',
+    detail    TEXT NOT NULL DEFAULT '',
+    ts        REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS favorites (
     username TEXT NOT NULL,
     path     TEXT NOT NULL,
@@ -181,6 +195,30 @@ def recent_owner_merges(limit: int = 50) -> list[dict]:
     return [{"username": r["username"], "pr_id": r["pr_id"],
              "paths": r["paths"].split("\n"), "ts": r["ts"],
              "pr_author": r["pr_author"], "kind": r["kind"]} for r in rows]
+
+
+# --- suggestion outcomes ----------------------------------------------------
+
+def log_suggestion_outcome(pr_id: int, outcome: str, actor: str,
+                           pr_author: str = "", detail: str = "") -> None:
+    """Record how a suggestion was decided ('declined' or 'partial').
+    REPLACE, not INSERT: a re-decided suggestion (reopened in Gitea, decided
+    again) keeps one row — the latest decision is the one the list shows."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO suggestion_outcomes "
+            "(pr_id, outcome, actor, pr_author, detail, ts) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (pr_id, outcome, actor, pr_author, detail, time.time()),
+        )
+
+
+def suggestion_outcomes() -> dict[int, str]:
+    """pr_id -> outcome, for annotating the Decided list in one query."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT pr_id, outcome FROM suggestion_outcomes").fetchall()
+    return {r["pr_id"]: r["outcome"] for r in rows}
 
 
 # --- favorites --------------------------------------------------------------

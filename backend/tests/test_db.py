@@ -68,3 +68,20 @@ def test_init_db_upgrades_legacy_owner_merges(fresh_db):
 def test_init_db_idempotent_after_upgrade(fresh_db):
     db.init_db()
     db.init_db()  # must not fail on already-added columns
+
+
+def test_suggestion_outcome_roundtrip(fresh_db):
+    db.init_db()
+    db.log_suggestion_outcome(4, "declined", "uma.user",
+                              pr_author="carl.contributor", detail="off-brand")
+    db.log_suggestion_outcome(9, "partial", "adam.approver", detail="2 of 3")
+    assert db.suggestion_outcomes() == {4: "declined", 9: "partial"}
+
+
+def test_suggestion_outcome_keeps_latest_decision(fresh_db):
+    """A suggestion reopened in Gitea and decided again keeps one row —
+    the newest decision wins."""
+    db.init_db()
+    db.log_suggestion_outcome(4, "declined", "uma.user")
+    db.log_suggestion_outcome(4, "partial", "uma.user", detail="1 of 2")
+    assert db.suggestion_outcomes() == {4: "partial"}
