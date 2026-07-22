@@ -3,8 +3,8 @@
 All Gitea traffic goes through a small in-memory fake covering the handful of
 endpoints the drafts router touches (forks, branches, contents, raw, compare,
 trees, pulls), so the tests exercise the REAL router + forks plumbing:
-path validation reuse, the 409s, browser 403s, and that publishing renders
-the chosen level into the front-matter.
+path validation reuse, the 409s, browser 403s, and that publishing always
+renders `level: community` into the front-matter (Bank is promotion-only).
 """
 
 import base64
@@ -382,7 +382,7 @@ def test_draft_history_404_for_missing_or_reserved_path(fake, make_client):
 
 # --- publish ----------------------------------------------------------------
 
-def test_publish_renders_chosen_level(fake, make_client):
+def test_publish_renders_community_level(fake, make_client):
     fake.draft_files[DRAFT_PATH] = DRAFT_CONTENT
     with make_client() as client:
         resp = client.post(f"/api/drafts/{DRAFT_PATH}/publish",
@@ -399,25 +399,28 @@ def test_publish_renders_chosen_level(fake, make_client):
     assert content.endswith("Write a calm escalation email.\n")
 
 
-def test_publish_bank_level_by_approver(fake, make_client):
-    """Bank is still reachable — by someone who may actually grant it."""
+def test_publish_renders_community_for_approver_too(fake, make_client):
+    """Publishing always produces a Community prompt, whoever clicks it. Bank
+    is promotion-only: an approver raises the live prompt afterwards
+    (docs/bank-upgrade.md), so even an approver's publish lands at Community."""
     fake.draft_files[DRAFT_PATH] = DRAFT_CONTENT
     with make_client("approver") as client:
-        resp = client.post(f"/api/drafts/{DRAFT_PATH}/publish", json={"level": "bank"})
+        resp = client.post(f"/api/drafts/{DRAFT_PATH}/publish",
+                           json={"level": "community"})
     assert resp.status_code == 200
     committed = [j for m, p, j in fake.writes if j.get("new_branch")]
-    assert "level: bank" in base64.b64decode(committed[-1]["content"]).decode()
+    assert "level: community" in base64.b64decode(committed[-1]["content"]).decode()
 
 
-def test_publish_bank_level_forbidden_for_contributor(fake, make_client):
-    """Only a Bank Approver may put a prompt in the Bank tier. A contributor
-    asking for it is refused outright — never silently downgraded, so nobody
-    believes they published to Bank when they did not."""
+@pytest.mark.parametrize("role", ["contributor", "approver"])
+def test_publish_bank_level_rejected_for_everyone(fake, make_client, role):
+    """The old "choose Bank at publish time" branch is gone: `level: bank` is
+    a 422 for every role — never accepted, never silently downgraded. The only
+    way into the Bank tier is raising a live Community prompt."""
     fake.draft_files[DRAFT_PATH] = DRAFT_CONTENT
-    with make_client() as client:
+    with make_client(role) as client:
         resp = client.post(f"/api/drafts/{DRAFT_PATH}/publish", json={"level": "bank"})
-    assert resp.status_code == 403
-    assert "Bank Approver" in resp.json()["detail"]
+    assert resp.status_code == 422
     assert not [j for m, p, j in fake.writes if j.get("new_branch")], \
         "a refused bank publish must not commit anything"
 
@@ -461,23 +464,6 @@ def test_publish_community_merges_immediately(fake, make_client, monkeypatch):
     assert resp.json()["published"] is True
     assert merged == [7], "community publish did not merge its own PR"
     assert "live in the Community library" in resp.json()["message"]
-
-
-def test_publish_bank_never_auto_merges(fake, make_client, monkeypatch):
-    """Bank is the tier that genuinely waits for a second pair of eyes. Even
-    for an approver — who may *request* Bank — publishing must not merge it."""
-    fake.draft_files[DRAFT_PATH] = DRAFT_CONTENT
-    merged = []
-    _enable_owner_merge(monkeypatch)
-    monkeypatch.setattr(pulls.ownership, "owner_mergeable",
-                        _allow(DRAFT_PATH, UMA))
-    monkeypatch.setattr(pulls, "_owner_merge", _record_merge(merged))
-    with make_client("approver") as client:
-        resp = client.post(f"/api/drafts/{DRAFT_PATH}/publish", json={"level": "bank"})
-    assert resp.status_code == 200
-    assert resp.json()["published"] is False
-    assert merged == [], "a bank publish must never merge itself"
-    assert "Bank Approver" in resp.json()["message"]
 
 
 def test_publish_falls_back_to_pr_when_merge_fails(fake, make_client, monkeypatch):

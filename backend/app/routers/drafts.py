@@ -17,7 +17,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import forks, gitea, prompt_index, roles
+from .. import forks, gitea, prompt_index
 from ..deps import UserSession, require_contributor
 from ..frontmatter import parse_prompt, render_prompt, replace_body
 from ..paths import is_prompt_file, slugify
@@ -91,7 +91,8 @@ async def create_draft(new: NewPrompt,
                             detail="You already have a draft with this name in that category.")
 
     tags = list(dict.fromkeys(t for t in (slugify(t) for t in new.tags) if t))
-    # No `level` yet — the level is chosen at publish time (PLAN.MD phase D).
+    # No `level` yet — publishing renders `level: community` server-side
+    # (Bank is promotion-only, docs/bank-upgrade.md).
     content = render_prompt({
         "title": new.title.strip(),
         "category": category,
@@ -262,29 +263,24 @@ async def delete_draft(path: str, session: UserSession = Depends(require_contrib
 
 
 class PublishRequest(BaseModel):
-    # Community is the default publication level: a contributor who says
-    # nothing gets the tier they are allowed to publish at.
-    level: Literal["bank", "community"] = "community"
+    # Community is the only level a publish can produce — for approvers too.
+    # Kept as a Literal so asking for anything else (including the retired
+    # `bank` value) is a 422, never a silent downgrade.
+    level: Literal["community"] = "community"
 
 
 @router.post("/{path:path}/publish")
 async def publish_draft(path: str, publish: PublishRequest,
                         session: UserSession = Depends(require_contributor)):
-    """Send one draft to the library at the chosen level.
+    """Send one draft to the Community library.
 
-    Community is the default and needs no approver: the PR it opens is
-    self-mergeable by its author (ownership.py phase E). Bank is approver-only
-    — and gated HERE, not merely in the UI, because asking for `level: bank`
-    is what puts a prompt in the tier whose every future edit requires a Bank
-    Approver. The front-matter is always re-rendered server-side, so the level
-    is never taken from draft content.
+    Publishing needs no approver: the PR it opens is self-mergeable by its
+    author (ownership.py phase E). Bank is deliberately not a choice here —
+    promotion is the only way into that tier: a Bank Approver raises the
+    prompt once it is live (prompts.py::raise_level, docs/bank-upgrade.md).
+    The front-matter is always re-rendered server-side, so the level is never
+    taken from draft content.
     """
-    if publish.level == "bank" and not await _is_approver(session):
-        raise HTTPException(
-            status_code=403,
-            detail="Only a Bank Approver can publish a prompt at Bank level. "
-                   "Publish it to the Community library instead — an approver "
-                   "can raise it to Bank later.")
     fork, raw = await _fetch_draft(session, path)
     if await forks.file_exists_on_main(session.token, path):
         raise HTTPException(status_code=409,
@@ -301,7 +297,7 @@ async def publish_draft(path: str, publish: PublishRequest,
         "category": prompt["category"],
         "tags": prompt["tags"],
         "status": "draft",
-        "level": publish.level,
+        "level": "community",
         "author": session.username,
         "owner": session.username,
         "target_model": prompt["target_model"],
@@ -309,7 +305,7 @@ async def publish_draft(path: str, publish: PublishRequest,
         "copied_from": prompt["copied_from"],
     }, prompt["body"])
 
-    origin = f"\n\nPublished from a personal draft at `{publish.level}` level."
+    origin = "\n\nPublished from a personal draft."
     pr = await forks.propose_change(
         session.token, session.username, path, content,
         branch=forks.branch_name(session.username, "publish"),
@@ -317,34 +313,22 @@ async def publish_draft(path: str, publish: PublishRequest,
         pr_title=f"New prompt: {prompt['title']}",
         pr_body=(prompt["intended_use"] or "New prompt.") + origin,
     )
-    # Community publishes are self-mergeable, so finish them here — the PR was
-    # only ever a step on the way in. Bank publishes are the case that really
-    # does wait for someone, and try_publish_now refuses them anyway.
-    published = False
-    if publish.level == "community":
-        published = await pulls.try_publish_now(session, pr["number"])
-    if published:
-        message = "Published. Your prompt is live in the Community library."
-    elif publish.level == "community":
-        message = ("Your prompt is ready to publish — open it under "
-                   "Suggestions and publish it to the library.")
-    else:
-        message = "Your draft has been sent to a Bank Approver for review."
+    # Community publishes are self-mergeable, so finish the job here — the PR
+    # was only ever a step on the way in. If the merge does not land, the PR
+    # stays open and Suggestions still works.
+    published = await pulls.try_publish_now(session, pr["number"])
+    message = ("Published. Your prompt is live in the Community library."
+               if published else
+               "Your prompt is ready to publish — open it under "
+               "Suggestions and publish it to the library.")
     return {"message": message, "id": pr["number"], "path": path,
-            "level": publish.level, "published": published}
+            "level": "community", "published": published}
 
 
 # --- helpers ----------------------------------------------------------------
 
 def _fork_api(fork: dict) -> str:
     return f"/repos/{fork['full_name']}"
-
-
-async def _is_approver(session: UserSession) -> bool:
-    """May this user publish at Bank level? Derived live from Gitea like every
-    other role check; anything short of approver (or admin) is a no."""
-    role = await roles.get_role(session.session_id, session.token)
-    return role in ("approver", "admin")
 
 
 async def _fetch_draft(session: UserSession, path: str) -> tuple[dict, str]:

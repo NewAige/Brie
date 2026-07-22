@@ -2,6 +2,7 @@
 
 import base64
 import difflib
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -9,8 +10,9 @@ from pydantic import BaseModel, Field
 from .. import db, forks, gitea, prompt_index
 from ..categories import DEPARTMENTS
 from ..config import settings
-from ..deps import UserSession, current_session, require_contributor
-from ..frontmatter import parse_prompt, render_prompt, replace_body, split_front_matter
+from ..deps import UserSession, current_session, require_approver, require_contributor
+from ..frontmatter import (parse_prompt, prompt_level, render_prompt,
+                           replace_body, replace_level, split_front_matter)
 from ..paths import is_prompt_file, slugify
 from . import pulls
 
@@ -159,6 +161,77 @@ async def suggest_edit(path: str, suggestion: Suggestion,
     return {"message": "Your suggestion has been sent for review.", "id": pr["number"]}
 
 
+class LevelChange(BaseModel):
+    # v1 is promotion-only. Demotion is NOT this endpoint with the values
+    # swapped — it re-arms a possibly-stale owner's self-publish and needs its
+    # own design (docs/bank-upgrade.md "Demotion is a separate question");
+    # constraining the type keeps it structurally impossible until then.
+    level: Literal["bank"]
+
+
+@router.post("/prompts/{path:path}/level")
+async def raise_level(path: str, change: LevelChange,
+                      session: UserSession = Depends(require_approver)):
+    """Raise a live Community prompt to Bank (docs/bank-upgrade.md).
+
+    A single direct commit to `main` with the promoting approver's OWN token —
+    never a PR, never the bot — so the owner-merge machinery (`ownership.py`,
+    including its levels_on_head guard) stays out of the path entirely.
+    Approvers hold push access, so Gitea remains a real second layer: a
+    non-writer's token cannot make this commit even if the role check were
+    bypassed.
+
+    Only the `level:` line changes; the body and every other front-matter line
+    are byte-identical, so the commit diff records exactly what was decided.
+    The current level is read from `main` here, never trusted from the caller,
+    and the blob sha from that read guards the write: if anything lands on
+    main in between, Gitea refuses and we surface a conflict instead of
+    silently re-deciding on content the approver never saw.
+    """
+    # Stricter than _require_valid_path: `_templates/` and README files are
+    # not library prompts, so they have no level to raise.
+    if not is_prompt_file(path):
+        raise HTTPException(status_code=404, detail="Unknown prompt")
+    current = await _fetch_file(session.token, path)  # 404 if not on main
+    _fm, meta, _body = split_front_matter(current["text"])
+    if prompt_level(meta) != "community":
+        raise HTTPException(status_code=409,
+                            detail="This prompt is already Bank approved.")
+    try:
+        content = replace_level(current["text"], "bank")
+    except ValueError:
+        # The level parsed as community but the line cannot be rewritten
+        # safely (e.g. duplicate keys). Fail closed: no write we cannot
+        # stand behind as a one-line change.
+        raise HTTPException(
+            status_code=409,
+            detail="This prompt's details could not be safely updated. "
+                   "Review the prompt and try again.")
+
+    title = str(meta.get("title") or path)
+    try:
+        await gitea.api(
+            session.token, "PUT", f"{settings.repo_api}/contents/{path}",
+            json={"branch": "main", "sha": current["sha"],
+                  "content": base64.b64encode(content.encode()).decode(),
+                  "message": f"Raise to Bank: {title}\n\n"
+                             f"Raised by {session.username}. Every future "
+                             "change now requires a Bank Approver."})
+    except HTTPException as exc:
+        if exc.status_code in (409, 422):
+            # Blob-sha mismatch: main moved between our read and this write.
+            # Deliberately no internal retry — re-reading means re-deciding,
+            # and the approver should see what changed first.
+            raise HTTPException(
+                status_code=409,
+                detail="This prompt changed while you were raising it. "
+                       "Review the latest version and try again.")
+        raise
+    return {"message": f"{title} is now Bank approved. Every future change "
+                       "requires a Bank Approver's sign-off.",
+            "path": path, "level": "bank"}
+
+
 class NewPrompt(BaseModel):
     title: str = Field(min_length=3, max_length=120)
     category: str = Field(min_length=1, max_length=60)
@@ -205,8 +278,8 @@ async def create_prompt(new: NewPrompt,
         "status": "draft",
         # New prompts are always Community — the default publication level,
         # owner-maintained from the moment they land. Bank is deliberately not
-        # offered here: only an approver may put a prompt in that tier, via
-        # the draft-publish flow (routers/drafts.py) or by raising it later.
+        # offered here: promotion is the only way into that tier — an approver
+        # raises the live prompt afterwards via `raise_level` above.
         "level": "community",
         "author": session.username,
         "owner": session.username,

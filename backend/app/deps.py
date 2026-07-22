@@ -67,6 +67,19 @@ async def require_contributor(session: UserSession = Depends(current_session)) -
     return session
 
 
+async def require_approver(session: UserSession = Depends(current_session)) -> UserSession:
+    """403 unless the user's live-derived role is `approver` or `admin` —
+    the roles that may put a prompt in the Bank tier (docs/bank-upgrade.md).
+    Fails closed like every role check: a Gitea error while deriving the role
+    yields `browser`, which is denied here."""
+    role = await roles.get_role(session.session_id, session.token)
+    if role not in ("approver", "admin"):
+        raise HTTPException(
+            status_code=403,
+            detail="Only a Bank Approver can change a prompt's level.")
+    return session
+
+
 async def require_admin(session: UserSession = Depends(current_session)) -> UserSession:
     """403 unless the user's live-derived role is `admin` (PLAN.MD phase E).
     Admin endpoints then act with the admin's OWN token — never the bot — so

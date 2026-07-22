@@ -1,11 +1,11 @@
 # Raising a prompt from Community to Bank
 
-**Status: not built — this is the design.** Nothing in the app offers a
-"raise to Bank" action yet, but the UI already promises one: the draft publish
-dialog tells every contributor *"A Bank Approver can raise it to Bank once
-it's live"* (`frontend/src/pages/Drafts.jsx`). This document is the model that
-promise commits us to: what already exists in the code, the intended design,
-and what an implementation has to get right.
+**Status: built.** The design below is implemented: promotion is
+`POST /api/prompts/{path}/level` (`backend/app/routers/prompts.py::raise_level`,
+gated by `deps.require_approver`), surfaced as the "Raise to Bank" action in
+`frontend/src/pages/PromptDetail.jsx`, and the dangling bank branch in
+`publish_draft` has been removed. This document remains the model the feature
+commits us to: read it before changing any of that behavior.
 
 **Depends on:** PLAN.MD phases A–E (levels, roles, peer approval, drafts,
 self-publish) — all shipped.
@@ -40,12 +40,12 @@ missing. What exists, and where:
 | New prompts forced to community for self-publish | Built — phase E arm of `decide`: new file must declare `level: community` |
 | Level badge in the UI | Built — `frontend/src/components/LevelBadge.jsx` ("Bank approved" / "Community · maintained by …") |
 | Bank-level publish gated to approvers server-side | Built — `drafts.py::publish_draft` + `_is_approver` |
-| **A way to raise a live community prompt to Bank** | **Missing — this document** |
+| **A way to raise a live community prompt to Bank** | Built — `prompts.py::raise_level`, per this document |
 
-One consequence worth stating plainly: because nothing can flip a level today,
-the seven bank-level seed prompts are the *only* Bank prompts that can exist
-through the app's own UI. The tier the whole governance model is named
-for is currently unreachable for new content. That is the gap promotion fills.
+Before promotion existed, the seven bank-level seed prompts were the *only*
+Bank prompts that could exist through the app's own UI — the tier the whole
+governance model is named for was unreachable for new content. That is the
+gap promotion fills.
 
 ## Why promotion rather than choice at creation
 
@@ -65,20 +65,16 @@ authorship from the governance decision:
    Bank status is only ever granted, explicitly, by the role that will be
    accountable for every subsequent change.
 
-## The dangling bank branch in `publish_draft`
+## The dangling bank branch in `publish_draft` (removed)
 
-`publish_draft` still accepts `level: "bank"` — the last remnant of the old
-"choose your tier at publish time" model. It is gated to approvers
-server-side (`_is_approver`), so it is not a hole, but the UI no longer sends
-it: `Drafts.jsx` always publishes to community, for approvers too.
-
-`create_prompt`'s comment currently describes this branch as the intentional
-approver path into Bank. The promotion model supersedes that: **when the
-endpoint below lands, remove the bank branch** (and its `_is_approver` gate,
-tests, and the `Literal` widening) so that promotion is the *only* way a
-prompt enters the Bank tier. One path means one audit story, one confirm
-dialog, one place a mistake can happen — and even approvers' new prompts get
-a lived-in community version before anyone commits to gating its every edit.
+`publish_draft` used to accept `level: "bank"` — the last remnant of the old
+"choose your tier at publish time" model, gated to approvers server-side via
+an inlined `_is_approver` check. With promotion landed, that branch is gone:
+the request's `level` is `Literal["community"]`, so asking for `bank` is a
+422 for every role, and promotion is the *only* way a prompt enters the Bank
+tier. One path means one audit story, one confirm dialog, one place a mistake
+can happen — and even approvers' new prompts get a lived-in community version
+before anyone commits to gating its every edit.
 
 ## Design
 
