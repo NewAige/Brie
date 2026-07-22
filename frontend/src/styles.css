@@ -170,10 +170,29 @@ a:hover { text-decoration: underline; }
 
 /* Activity */
 .activity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0.9rem; }
+.activity-recent { margin-bottom: 1.25rem; }
 .plain-list { list-style: none; margin: 0 0 0.5rem; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
 .plain-list li { display: flex; flex-direction: column; }
 .ranked { counter-reset: rank; }
-.ranked li { counter-increment: rank; position: relative; padding-left: 1.6rem; }
-.ranked li::before { content: counter(rank); position: absolute; left: 0; top: 0.1rem; font-weight: 700; color: var(--muted); font-size: 0.85rem; }
+.ranked li { counter-increment: rank; position: relative; padding-left: 1.9rem; }
+.ranked li::before {
+  content: counter(rank); position: absolute; left: 0; top: 0.15rem;
+  width: 1.25rem; height: 1.25rem; display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 0.75rem; color: var(--muted);
+  background: var(--gray-bg); border-radius: 50%;
+}
+.ranked li.rank-1::before { background: #f6dd8f; color: #6b4e00; }
+.ranked li.rank-2::before { background: #e3e7eb; color: #4d565f; }
+.ranked li.rank-3::before { background: #ecc9ab; color: #7a4a21; }
+
+.leaderboards-head { display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; margin: 0 0 0.75rem; }
+.leaderboards-head h2 { margin: 0; font-size: 1.2rem; }
+.leaderboard-sub { margin: -0.5rem 0 0.75rem; }
+.leaderboard-row { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; }
+.leaderboard-count { color: var(--muted); font-size: 0.83rem; white-space: nowrap; }
+
+/* Favorite (star) button */
+.fav-btn { min-width: 4.5rem; }
+.fav-btn.fav-on { color: var(--amber); border-color: var(--amber); background: var(--amber-bg); }
 
 .tabs { display: flex; gap: 0.4rem; }

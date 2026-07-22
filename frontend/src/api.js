@@ -44,6 +44,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ body, note }),
     }),
+  saveAs: (path, { title, category, body, note }) =>
+    request(`/api/prompts/${encodePath(path)}/save-as`, {
+      method: 'POST',
+      body: JSON.stringify({ title, category, body, note }),
+    }),
+  favorite: (path, on) =>
+    request(`/api/prompts/${encodePath(path)}/favorite`, { method: on ? 'PUT' : 'DELETE' }),
   logCopy: (path) => {
     // Fire-and-forget — a failed log must never break the copy itself.
     request('/api/events/copy', {

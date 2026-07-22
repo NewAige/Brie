@@ -78,6 +78,19 @@ def replace_body(raw: str, new_body: str) -> str:
     return f"{fm_block}\n\n{new_body}\n"
 
 
+def build_prompt_file(meta: dict, body: str) -> str:
+    """Assemble a brand-new prompt file: YAML front-matter + body.
+
+    Used by "save a copy as a new prompt". Empty/None metadata values are
+    dropped so the front-matter stays tidy.
+    """
+    clean = {k: v for k, v in meta.items() if v not in (None, "", [])}
+    yaml_block = yaml.safe_dump(clean, sort_keys=False, allow_unicode=True,
+                                default_flow_style=False).strip("\n")
+    body = body.replace("\r\n", "\n").strip("\n")
+    return f"{DELIMITER}\n{yaml_block}\n{DELIMITER}\n\n{body}\n"
+
+
 def _title_from_path(path: str) -> str:
     name = path.rsplit("/", 1)[-1]
     if name.endswith(".md"):

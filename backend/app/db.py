@@ -1,6 +1,6 @@
 """SQLite storage.
 
-Holds exactly three things, none of which is prompt data (Gitea's git repo is
+Holds a handful of things, none of which is prompt data (Gitea's git repo is
 the single source of truth):
 
 - sessions:      session id -> the user's Gitea OAuth tokens. Tokens live
@@ -9,6 +9,12 @@ the single source of truth):
 - oauth_states:  short-lived CSRF `state` values for in-flight OAuth logins.
 - copy_events:   prompt path + timestamp per copy click. Deliberately nothing
                  else — no user id, no prompt content, no PII (spec §7).
+- favorites:     (username, prompt path) pairs — a user's starred prompts.
+                 The username is required so a user can star a prompt at most
+                 once; no prompt content is stored.
+- remix_events:  source prompt path + timestamp, logged when someone saves a
+                 copy of a prompt as a new prompt. Same minimal shape as
+                 copy_events.
 """
 
 import os
@@ -36,6 +42,19 @@ CREATE TABLE IF NOT EXISTS copy_events (
     ts   REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_copy_events_path ON copy_events(path);
+CREATE TABLE IF NOT EXISTS favorites (
+    username TEXT NOT NULL,
+    path     TEXT NOT NULL,
+    ts       REAL NOT NULL,
+    PRIMARY KEY (username, path)
+);
+CREATE INDEX IF NOT EXISTS idx_favorites_path ON favorites(path);
+CREATE TABLE IF NOT EXISTS remix_events (
+    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL,
+    ts   REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_remix_events_path ON remix_events(path);
 """
 
 
@@ -124,3 +143,60 @@ def most_copied(limit: int = 10) -> list[dict]:
             (limit,),
         ).fetchall()
     return [{"path": r["path"], "copies": r["copies"]} for r in rows]
+
+
+# --- favorites --------------------------------------------------------------
+
+def add_favorite(username: str, path: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO favorites (username, path, ts) VALUES (?, ?, ?)",
+            (username, path, time.time()),
+        )
+
+
+def remove_favorite(username: str, path: str) -> None:
+    with connect() as conn:
+        conn.execute("DELETE FROM favorites WHERE username = ? AND path = ?",
+                     (username, path))
+
+
+def favorite_state(username: str, path: str) -> dict:
+    """The star count for a prompt plus whether this user has starred it."""
+    with connect() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) AS n FROM favorites WHERE path = ?", (path,)
+        ).fetchone()["n"]
+        mine = conn.execute(
+            "SELECT 1 FROM favorites WHERE username = ? AND path = ?",
+            (username, path),
+        ).fetchone()
+    return {"favorites": count, "favorited": mine is not None}
+
+
+def most_favorited(limit: int = 10) -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT path, COUNT(*) AS favorites FROM favorites GROUP BY path "
+            "ORDER BY favorites DESC, path ASC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [{"path": r["path"], "favorites": r["favorites"]} for r in rows]
+
+
+# --- remix events -----------------------------------------------------------
+
+def log_remix_event(path: str) -> None:
+    with connect() as conn:
+        conn.execute("INSERT INTO remix_events (path, ts) VALUES (?, ?)",
+                     (path, time.time()))
+
+
+def most_remixed(limit: int = 10) -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT path, COUNT(*) AS remixes FROM remix_events GROUP BY path "
+            "ORDER BY remixes DESC, path ASC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [{"path": r["path"], "remixes": r["remixes"]} for r in rows]

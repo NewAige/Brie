@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from .. import db, gitea, prompt_index
 from ..config import settings
 from ..deps import UserSession, current_session
-from ..frontmatter import parse_prompt, replace_body, split_front_matter
+from ..frontmatter import build_prompt_file, parse_prompt, replace_body, split_front_matter
 
 router = APIRouter(prefix="/api", dependencies=[Depends(current_session)])
 
@@ -103,7 +103,23 @@ async def prompt_history(path: str, session: UserSession = Depends(current_sessi
 async def get_prompt(path: str, session: UserSession = Depends(current_session)):
     _require_valid_path(path)
     raw = await _fetch_file(session.token, path)
-    return _public(parse_prompt(path, raw["text"]), with_body=True)
+    out = _public(parse_prompt(path, raw["text"]), with_body=True)
+    out.update(db.favorite_state(session.username, path))
+    return out
+
+
+@router.put("/prompts/{path:path}/favorite")
+async def favorite(path: str, session: UserSession = Depends(current_session)):
+    _require_valid_path(path)
+    db.add_favorite(session.username, path)
+    return db.favorite_state(session.username, path)
+
+
+@router.delete("/prompts/{path:path}/favorite")
+async def unfavorite(path: str, session: UserSession = Depends(current_session)):
+    _require_valid_path(path)
+    db.remove_favorite(session.username, path)
+    return db.favorite_state(session.username, path)
 
 
 class Suggestion(BaseModel):
@@ -152,6 +168,73 @@ async def suggest_edit(path: str, suggestion: Suggestion,
               "title": f"Suggestion: {title}", "body": suggestion.note},
     )
     return {"message": "Your suggestion has been sent for review.", "id": pr["number"]}
+
+
+class SaveAsCopy(BaseModel):
+    title: str = Field(min_length=1, max_length=200, description="Title for the new prompt")
+    category: str = Field(min_length=1, description="Existing category folder for the new prompt")
+    body: str = Field(min_length=1, description="The new prompt body (no front-matter)")
+    note: str = Field(min_length=1, max_length=2000, description="What this copy is for")
+
+
+@router.post("/prompts/{path:path}/save-as")
+async def save_as_copy(path: str, req: SaveAsCopy,
+                       session: UserSession = Depends(current_session)):
+    """Save a copy of an existing prompt as a brand-new prompt file, submitted
+    for review through the same branch/fork + PR flow as "suggest an edit".
+    The source prompt is credited via a `derived_from` front-matter field and
+    the remix is tallied for the activity leaderboards.
+    """
+    _require_valid_path(path)
+    prompts = await prompt_index.get_index(session.token)
+    source = next((p for p in prompts if p["path"] == path), None)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Unknown prompt")
+    if req.category not in {p["category"] for p in prompts}:
+        raise HTTPException(status_code=400, detail="Pick an existing category for the new prompt.")
+
+    slug = re.sub(r"[^a-z0-9]+", "-", req.title.lower()).strip("-")
+    if not slug:
+        raise HTTPException(status_code=400, detail="The title must contain letters or numbers.")
+    new_path = f"{req.category}/{slug}.md"
+    if any(p["path"] == new_path for p in prompts):
+        raise HTTPException(status_code=400,
+                            detail="A prompt with that title already exists in this category — pick another title.")
+
+    content = build_prompt_file({
+        "title": req.title.strip(),
+        "author": session.username,
+        "status": "draft",
+        "tags": source["tags"],
+        "target_model": source["target_model"],
+        "intended_use": source["intended_use"],
+        "derived_from": path,
+    }, req.body)
+
+    branch = _branch_name(session.username)
+    message = f"New prompt: {req.title.strip()}\n\nSaved as a copy of {path}.\n\n{req.note}"
+
+    repo = await gitea.api(session.token, "GET", settings.repo_api)
+    if (repo.get("permissions") or {}).get("push"):
+        await _commit_to_new_branch(session.token, settings.repo_api, new_path,
+                                    base_branch="main", new_branch=branch,
+                                    content=content, message=message)
+        head = branch
+    else:
+        fork = await _ensure_fork(session.token, session.username)
+        await _commit_to_new_branch(session.token, f"/repos/{fork['full_name']}", new_path,
+                                    base_branch=fork["default_branch"] or "main",
+                                    new_branch=branch, content=content, message=message)
+        head = f"{fork['owner']['login']}:{branch}"
+
+    pr = await gitea.api(
+        session.token, "POST", f"{settings.repo_api}/pulls",
+        json={"base": "main", "head": head,
+              "title": f"New prompt: {req.title.strip()}",
+              "body": f"Saved as a copy of `{path}`.\n\n{req.note}"},
+    )
+    db.log_remix_event(path)
+    return {"message": "Your new prompt has been sent for review.", "id": pr["number"]}
 
 
 class CopyEvent(BaseModel):

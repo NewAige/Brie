@@ -2,7 +2,7 @@
 flawless (spec §4): the body must never include YAML, and must survive odd
 files (windows line endings, --- inside the body, missing front-matter)."""
 
-from app.frontmatter import parse_prompt, replace_body, split_front_matter
+from app.frontmatter import build_prompt_file, parse_prompt, replace_body, split_front_matter
 
 FULL = """---
 title: Payment Deferral Explainer
@@ -94,3 +94,29 @@ def test_replace_body_preserves_front_matter_verbatim():
 
 def test_replace_body_without_front_matter():
     assert replace_body("old text", "new text") == "new text\n"
+
+def test_build_prompt_file_round_trips():
+    content = build_prompt_file(
+        {"title": "My Copy", "author": "jdoe", "status": "draft",
+         "tags": ["loans"], "target_model": "", "intended_use": None,
+         "derived_from": "loan-servicing/payment-deferral.md"},
+        "Do the thing.\r\n\r\nCarefully.\n",
+    )
+    fm, meta, body = split_front_matter(content)
+    assert fm.startswith("---")
+    assert meta["title"] == "My Copy"
+    assert meta["author"] == "jdoe"
+    assert meta["status"] == "draft"
+    assert meta["tags"] == ["loans"]
+    assert meta["derived_from"] == "loan-servicing/payment-deferral.md"
+    # empty values are dropped, not written as nulls
+    assert "target_model" not in meta
+    assert "intended_use" not in meta
+    assert body == "Do the thing.\n\nCarefully.\n"
+
+
+def test_build_prompt_file_escapes_yaml_special_titles():
+    content = build_prompt_file({"title": "Rates: a --- guide", "status": "draft"}, "Body.")
+    _, meta, body = split_front_matter(content)
+    assert meta["title"] == "Rates: a --- guide"
+    assert body == "Body.\n"

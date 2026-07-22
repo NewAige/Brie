@@ -66,9 +66,16 @@ Active Directory via LDAP — see [docs/deployment.md](docs/deployment.md).
 - **Roles are resolved from Gitea**: repo admin → Admin, write → Approver,
   read → Member. OAuth scopes do not grant permissions — Gitea checks the
   user's real rights on every call.
-- **Activity** comes from Gitea (recent merges, open suggestions), except
-  "most copied", which is logged locally as `prompt path + timestamp` and
-  nothing else — no user id, no content, no PII.
+- **Activity** shows recently published changes (from Gitea) plus engagement
+  leaderboards: top authors (front-matter authors), top contributors (merged
+  suggestions from Gitea), and most favorited / copied / remixed prompts.
+  Copy and remix events are logged locally as `prompt path + timestamp` and
+  nothing else — no user id, no content, no PII. Favorites store
+  `username + prompt path` (needed so a prompt can be starred once per user),
+  but never any prompt content.
+- **"Save as new prompt"** lets anyone copy an existing prompt into a new
+  draft prompt of their own (credited via `derived_from` front-matter); it
+  goes through the same review flow as suggestions.
 
 ## Security properties
 
