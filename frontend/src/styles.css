@@ -510,6 +510,11 @@ a:hover { text-decoration: underline; }
 .tag-static:hover { color: var(--text-secondary); border-color: var(--border); background: var(--surface-sunken); }
 .tags { display: inline-flex; flex-wrap: wrap; gap: 0.35rem; }
 
+/* The "+N more" / "Show less" expander: reads as a subtle control, not a
+   filter chip. Reuses the .tag pill sizing via className="tag tag-more". */
+.tag-more { background: transparent; border-color: transparent; color: var(--muted); }
+.tag-more:hover { color: var(--accent-strong); border-color: var(--accent-border); background: var(--accent-soft); }
+
 /* -------------------------------------------------------------- Favorites */
 /* Two variants: a bare star on library table rows, and a labelled .btn on the
    prompt page. The chrome-stripping below is scoped to :not(.btn) — unscoped
@@ -612,11 +617,13 @@ a:hover { text-decoration: underline; }
 .pt-title { display: block; font-weight: 700; color: var(--text); letter-spacing: -0.005em; }
 .pt-title:hover { color: var(--accent-strong); text-decoration: none; }
 .pt-desc {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   color: var(--text-secondary);
   font-size: 0.84rem;
   max-width: 42ch;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
