@@ -907,6 +907,8 @@ select.editor-note {
 
 /* -------------------------------------------------------------- Activity */
 .activity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 1rem; }
+.leaderboard-head { display: flex; align-items: center; gap: 0.5rem; margin: 2.2rem 0 0.35rem; }
+.leaderboard-head .icon { color: var(--accent); }
 .activity-col h2 { display: flex; align-items: center; gap: 0.5rem; color: var(--text); }
 .activity-col h2 .icon { color: var(--accent); }
 .plain-list { list-style: none; margin: 0 0 0.5rem; padding: 0; display: flex; flex-direction: column; gap: 0.65rem; }

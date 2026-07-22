@@ -81,6 +81,21 @@ const PATHS = {
       <path d="M3 12h18M12 3c2.6 2.5 3.9 5.5 3.9 9S14.6 18.5 12 21c-2.6-2.5-3.9-5.5-3.9-9S9.4 5.5 12 3z" />
     </>
   ),
+  trophy: (
+    <>
+      <path d="M8 3.8h8V9a4 4 0 0 1-8 0z" />
+      <path d="M8 5H4.8v1.7A3.3 3.3 0 0 0 8.1 10M16 5h3.2v1.7a3.3 3.3 0 0 1-3.3 3.3" />
+      <path d="M12 13v3M8.8 20.2h6.4M10.2 20.2l.6-4.2h2.4l.6 4.2" />
+    </>
+  ),
+  // "Remix": one path splitting into another — deliberately not git imagery.
+  shuffle: (
+    <>
+      <path d="M3 7h2.9c1.5 0 2.5.6 3.3 1.8l4.6 6.4c.8 1.2 1.8 1.8 3.3 1.8H20" />
+      <path d="M3 17h2.9c1.5 0 2.5-.6 3.3-1.8l.9-1.3M12.9 9.1l.9-1.3C14.6 6.6 15.6 6 17.1 6H20" />
+      <path d="m17.6 3.5 2.5 2.5-2.5 2.5M17.6 14.5l2.5 2.5-2.5 2.5" />
+    </>
+  ),
 }
 
 // `filled` paints the shape in the current colour instead of outlining it —

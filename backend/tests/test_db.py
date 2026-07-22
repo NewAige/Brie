@@ -85,3 +85,35 @@ def test_suggestion_outcome_keeps_latest_decision(fresh_db):
     db.log_suggestion_outcome(4, "declined", "uma.user")
     db.log_suggestion_outcome(4, "partial", "uma.user", detail="1 of 2")
     assert db.suggestion_outcomes() == {4: "partial"}
+
+
+def test_most_favorited_counts_without_usernames(fresh_db):
+    """The leaderboard aggregate exposes per-prompt totals only — no
+    usernames leave the table."""
+    db.init_db()
+    db.add_favorite("uma.user", "a/one.md")
+    db.add_favorite("carl.contributor", "a/one.md")
+    db.add_favorite("uma.user", "b/two.md")
+    db.add_favorite("uma.user", "b/two.md")  # idempotent re-mark
+    rows = db.most_favorited()
+    assert rows == [{"path": "a/one.md", "favorites": 2},
+                    {"path": "b/two.md", "favorites": 1}]
+    assert all(set(r) == {"path", "favorites"} for r in rows)
+
+
+def test_most_favorited_unmark_removes_from_tally(fresh_db):
+    db.init_db()
+    db.add_favorite("uma.user", "a/one.md")
+    db.remove_favorite("uma.user", "a/one.md")
+    assert db.most_favorited() == []
+
+
+def test_partial_accept_counts_credits_suggestion_authors(fresh_db):
+    """Only partial outcomes count, grouped by who authored the suggestion;
+    pre-phase-C rows with no recorded author credit nobody."""
+    db.init_db()
+    db.log_suggestion_outcome(1, "partial", "adam.approver", pr_author="uma.user")
+    db.log_suggestion_outcome(2, "partial", "adam.approver", pr_author="uma.user")
+    db.log_suggestion_outcome(3, "declined", "adam.approver", pr_author="uma.user")
+    db.log_suggestion_outcome(4, "partial", "adam.approver")  # no author recorded
+    assert db.partial_accept_counts() == {"uma.user": 2}

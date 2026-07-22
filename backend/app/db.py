@@ -16,8 +16,10 @@ the single source of truth):
 - favorites:     which prompts a user marked to come back to. Also records the
                  username, for the same reason a bookmark list has to: it is
                  the user's own data, shown back only to them, and useless
-                 without knowing whose it is. Not analytics — nothing aggregates
-                 across users, and it is deleted when the user unmarks it.
+                 without knowing whose it is. It is deleted when the user
+                 unmarks it, and the ONLY cross-user aggregate ever computed
+                 is the Activity leaderboard's per-prompt favorite total —
+                 a count with no usernames attached (most_favorited below).
 - suggestion_outcomes: how a closed suggestion was decided — declined outright,
                  or partially published (some changes accepted, the rest
                  declined). Gitea only knows "closed", so without this the
@@ -254,3 +256,28 @@ def most_copied(limit: int = 10) -> list[dict]:
             (limit,),
         ).fetchall()
     return [{"path": r["path"], "copies": r["copies"]} for r in rows]
+
+
+def most_favorited(limit: int = 10) -> list[dict]:
+    """Per-prompt favorite totals for the Activity leaderboard. Counts only —
+    who marked what stays private to each user (see the header comment)."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT path, COUNT(*) AS favorites FROM favorites GROUP BY path "
+            "ORDER BY favorites DESC, path ASC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [{"path": r["path"], "favorites": r["favorites"]} for r in rows]
+
+
+def partial_accept_counts() -> dict[str, int]:
+    """pr_author -> number of partially published suggestions. Gitea records
+    those as plain 'closed', so the contributor leaderboard would miss them
+    without the outcome log. Rows from before pr_author existed are '' and
+    are excluded — nobody to credit."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT pr_author, COUNT(*) AS n FROM suggestion_outcomes "
+            "WHERE outcome = 'partial' AND pr_author != '' "
+            "GROUP BY pr_author").fetchall()
+    return {r["pr_author"]: r["n"] for r in rows}
