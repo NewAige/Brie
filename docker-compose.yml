@@ -31,6 +31,12 @@ services:
       - GITEA__security__INSTALL_LOCK=true
     volumes:
       - ./data/gitea:/data
+      # Brie sign-in re-skin (tracked in git, unlike ./data which is runtime
+      # state). GITEA_CUSTOM is /data/gitea in this image, so these land at the
+      # custom template/asset paths and only restyle the OAuth login page —
+      # auth flow and security are untouched. Read-only: Gitea never writes here.
+      - ./gitea/custom/templates/custom:/data/gitea/templates/custom:ro
+      - ./gitea/custom/public/assets/css:/data/gitea/public/assets/css:ro
     ports:
       # The browser must reach Gitea directly for the OAuth authorize/login pages.
       - "3000:3000"
