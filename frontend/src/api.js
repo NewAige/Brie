@@ -84,9 +84,27 @@ export const api = {
     }),
   pulls: (state = 'open') => request(`/api/pulls?state=${state}`),
   pullDiff: (id) => request(`/api/pulls/${id}/diff`),
+  // How many open suggestions the signed-in user can decide (the nav badge).
+  pullsAttention: () => request('/api/pulls/attention'),
+  // The suggestion split into individually acceptable changes, pinned to
+  // exact revisions so a later pullApply can detect that anything moved.
+  pullReview: (id) => request(`/api/pulls/${id}/review`),
   // Publishes as approver or as prompt owner — the backend decides which,
   // and re-checks ownership itself. `pr.owner_mergeable` only picks the label.
   merge: (id) => request(`/api/pulls/${id}/merge`, { method: 'POST' }),
+  // Publish only some of a suggestion's changes and decline the rest.
+  // `selection` is { head_sha, base_sha, files: [{ path, hunks: [int] }] }
+  // straight from pullReview plus the reviewer's choices.
+  pullApply: (id, selection) =>
+    request(`/api/pulls/${id}/apply`, {
+      method: 'POST',
+      body: JSON.stringify(selection),
+    }),
+  pullDecline: (id, note = '') =>
+    request(`/api/pulls/${id}/decline`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    }),
   activity: () => request('/api/activity'),
   adminUsers: () => request('/api/admin/users'),
   // One call for a full role change: repo permission *and* contributors-team

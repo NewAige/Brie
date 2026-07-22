@@ -161,12 +161,20 @@ def decide(username: str, paths: list[str],
                     tuple(paths), pr_author)
 
 
-async def owner_mergeable(token: str, username: str, pr_id: int) -> Decision:
+async def owner_mergeable(token: str, username: str, pr_id: int, *,
+                          require_mergeable: bool = True) -> Decision:
     """Fetch what `decide` needs and apply it. Reads use the USER's token, so
     Gitea's access control still applies to everything we look at.
 
     Any Gitea error is a denial, not an exception — a PR we cannot fully
     inspect is one we must send to an approver.
+
+    `require_mergeable=False` skips only the merge-conflict gate, for callers
+    who are NOT about to merge the branch: declining a suggestion, or
+    publishing an accepted subset of it as a fresh commit (routers/pulls.py).
+    A conflict makes a merge pointless but says nothing about ownership, and
+    without this an owner could never decline a conflicted peer suggestion.
+    Every ownership and level check still runs unchanged.
     """
     try:
         pr = await gitea.api(token, "GET", f"{settings.repo_api}/pulls/{pr_id}")
@@ -175,7 +183,7 @@ async def owner_mergeable(token: str, username: str, pr_id: int) -> Decision:
 
     if pr.get("state") != "open" or pr.get("merged"):
         return Decision(False, "PR is not open")
-    if pr.get("mergeable") is False:
+    if require_mergeable and pr.get("mergeable") is False:
         return Decision(False, "PR has conflicts")
 
     head_sha = (pr.get("head") or {}).get("sha")

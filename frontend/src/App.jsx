@@ -32,6 +32,8 @@ const initials = (name = '') =>
 export default function App() {
   const [user, setUser] = useState(null)
   const [checking, setChecking] = useState(true)
+  // Open suggestions this user can decide — the red count on the nav tab.
+  const [attention, setAttention] = useState(0)
 
   useEffect(() => {
     api
@@ -40,6 +42,26 @@ export default function App() {
       .catch(() => setUser(null))
       .finally(() => setChecking(false))
   }, [])
+
+  useEffect(() => {
+    if (!user) return undefined
+    let alive = true
+    const load = () =>
+      api
+        .pullsAttention()
+        .then((d) => alive && setAttention(d.count))
+        .catch(() => {}) // the badge is cosmetic — never surface its errors
+    load()
+    // Refresh once a minute, and immediately after any decision made on the
+    // Suggestions page (it dispatches 'suggestions-changed').
+    const timer = setInterval(load, 60000)
+    window.addEventListener('suggestions-changed', load)
+    return () => {
+      alive = false
+      clearInterval(timer)
+      window.removeEventListener('suggestions-changed', load)
+    }
+  }, [user])
 
   if (checking) {
     return (
@@ -66,7 +88,14 @@ export default function App() {
             <nav className="nav">
               <NavLink to="/" end><Icon name="folder" size={16} /> Library</NavLink>
               {user.role !== 'browser' && <NavLink to="/drafts"><Icon name="edit" size={16} /> My drafts</NavLink>}
-              <NavLink to="/suggestions"><Icon name="inbox" size={16} /> Suggestions</NavLink>
+              <NavLink to="/suggestions">
+                <Icon name="inbox" size={16} /> Suggestions
+                {attention > 0 && (
+                  <span className="nav-badge" aria-label={`${attention} suggestions awaiting your review`}>
+                    {attention > 99 ? '99+' : attention}
+                  </span>
+                )}
+              </NavLink>
               <NavLink to="/activity"><Icon name="activity" size={16} /> Activity</NavLink>
               {user.role === 'admin' && <NavLink to="/admin"><Icon name="users" size={16} /> Users</NavLink>}
             </nav>

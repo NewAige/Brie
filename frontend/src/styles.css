@@ -186,6 +186,18 @@ a:hover { text-decoration: underline; }
   transition: background 0.15s var(--ease), color 0.15s var(--ease);
 }
 .nav a:hover { color: var(--text); background: var(--gray-bg); text-decoration: none; }
+/* Count of open suggestions awaiting the user's decision. */
+.nav-badge {
+  background: var(--red);
+  color: #fff;
+  border-radius: 99px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.3;
+  padding: 0.08rem 0.38rem;
+  min-width: 1.15rem;
+  text-align: center;
+}
 .nav a.active { color: var(--accent-strong); background: var(--accent-soft); }
 .nav a .icon { opacity: 0.75; }
 .nav a.active .icon { opacity: 1; }
@@ -688,6 +700,8 @@ a:hover { text-decoration: underline; }
 /* .badge-approved / .badge-deprecated are reused by Suggestions.jsx for PR merge state. */
 .badge-approved { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
 .badge-deprecated { background: var(--red-bg); color: var(--red); border-color: var(--red-border); }
+/* A suggestion where some changes were accepted and the rest declined. */
+.badge-partial { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); }
 /* Ownership: this user may publish changes here without an approver. */
 .badge-owner { background: var(--info-bg); color: var(--info); border-color: var(--info-border); }
 .badge-bank { background: var(--info-bg); color: var(--info); border-color: var(--info-border); }
@@ -848,6 +862,48 @@ select.editor-note {
 .diff-add { background: var(--green-bg); color: var(--green); }
 .diff-del { background: var(--red-bg); color: var(--red); }
 .diff-meta { color: var(--muted); background: var(--gray-bg); }
+
+/* ------------------------------------------- Review: per-change acceptance */
+.hunk {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin: 0.7rem 0;
+  overflow: hidden;
+  background: var(--surface);
+}
+.hunk-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--gray-bg);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  user-select: none;
+}
+.hunk-head input { accent-color: var(--green); cursor: pointer; }
+.hunk-counts { margin-left: auto; font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
+.hunk .diff { border: 0; border-radius: 0; }
+.hunk-skipped .diff { opacity: 0.45; }
+.hunk-skipped .hunk-head { color: var(--muted); }
+.hunk-file { font-weight: 600; font-size: 0.9rem; margin-top: 0.9rem; display: flex; align-items: center; gap: 0.4rem; }
+
+.decline-box { display: flex; flex-direction: column; gap: 0.55rem; margin-top: 0.7rem; }
+.decline-box textarea {
+  font: inherit;
+  min-height: 68px;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  resize: vertical;
+}
+.btn-decline:hover { color: var(--red); background: var(--red-bg); }
+.btn-danger { background: var(--red); border-color: var(--red); color: #fff; }
+.btn-danger:hover { background: #9a1f18; border-color: #9a1f18; color: #fff; }
 
 /* -------------------------------------------------------------- Activity */
 .activity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 1rem; }
