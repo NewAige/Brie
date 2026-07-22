@@ -8,7 +8,7 @@ import FavoriteButton from './FavoriteButton.jsx'
 import Icon from './Icon.jsx'
 
 // The library as a data table: one prompt per row, sortable columns, and the
-// quick actions (favourite / copy / use) pinned in the right-hand column.
+// quick actions (favorite / copy / use) pinned in the right-hand column.
 // Sorting is purely presentational, so it lives here client-side and resets
 // nothing when the filters above refetch.
 
