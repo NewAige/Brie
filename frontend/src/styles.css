@@ -4,6 +4,8 @@
    the workstation, and falls back to high-quality system fonts otherwise. */
 
 :root {
+  color-scheme: light;
+
   /* Brand — the bank's deep green (#006F51) and its darker shades.
      (--navy-* names kept for continuity; they now hold the dark greens.) */
   --navy-900: #05251c;
@@ -57,6 +59,15 @@
   --radius: 12px;
   --radius-lg: 16px;
 
+  /* Surfaces that can't be a flat variable swap: the translucent topbar,
+     the skeleton shimmer highlight, the compare-gap hatching, and the
+     login card's edge. Parameterized so dark mode (below) can retune them. */
+  --topbar-bg: rgba(255, 255, 255, 0.92);
+  --skeleton-mid: #f5f7fb;
+  --gap-stripe: rgba(28, 37, 52, 0.04);
+  --login-card-border: rgba(255, 255, 255, 0.4);
+  --brand-name-color: #20333f;
+
   /* Elevation */
   --shadow-xs: 0 1px 2px rgba(16, 32, 64, 0.05);
   --shadow-sm: 0 1px 2px rgba(16, 32, 64, 0.05), 0 2px 8px rgba(16, 32, 64, 0.05);
@@ -64,6 +75,62 @@
   --shadow-lg: 0 4px 8px rgba(12, 31, 63, 0.08), 0 20px 48px rgba(12, 31, 63, 0.16);
 
   --ease: cubic-bezier(0.2, 0.6, 0.3, 1);
+}
+
+/* ------------------------------------------------------------- Dark mode */
+/* Activated by data-theme="dark" on <html> (components/ThemeToggle.jsx; the
+   inline script in index.html restores it before first paint). Deliberately
+   dark grey rather than pure black — softer on the eyes and it keeps the
+   elevation system (borders + shadows) legible. Accents brighten a step so
+   text-on-dark contrast holds; brand greens in .btn-primary stay as-is. */
+:root[data-theme="dark"] {
+  /* Native widgets (selects, scrollbars, checkboxes) follow the theme too. */
+  color-scheme: dark;
+
+  --accent: #33ac85;
+  --accent-strong: #4cc39a;
+  --accent-soft: #14342a;
+  --accent-border: #2c5a49;
+
+  --bg: #1c1f24;
+  --surface: #262a31;
+  --surface-sunken: #21252b;
+  --border: #363c46;
+  --border-strong: #4a515d;
+  --text: #e7eaf0;
+  --text-secondary: #b6bec9;
+  --muted: #8b95a3;
+
+  --info: #8ab0f0;
+  --info-bg: #212f48;
+  --info-border: #35507a;
+
+  --green: #5ec897;
+  --green-bg: #1c3527;
+  --green-border: #2d5a41;
+  --amber: #e2ae4f;
+  --amber-bg: #3a2f17;
+  --amber-border: #5d4a24;
+  --red: #f0837c;
+  --red-bg: #402424;
+  --red-border: #6b3531;
+  --purple: #b691e8;
+  --purple-bg: #322843;
+  --purple-border: #4d3d6b;
+  --gray-bg: #30353e;
+  --star: #e8ab2f;
+  --star-strong: #f3c35c; /* hover brightens on dark, where light mode darkens */
+
+  --topbar-bg: rgba(32, 35, 41, 0.92);
+  --skeleton-mid: #3a404b;
+  --gap-stripe: rgba(231, 234, 240, 0.05);
+  --login-card-border: var(--border-strong);
+  --brand-name-color: var(--text);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.35), 0 20px 48px rgba(0, 0, 0, 0.5);
 }
 
 * { box-sizing: border-box; }
@@ -121,7 +188,7 @@ a:hover { text-decoration: underline; }
 
 /* --------------------------------------------------------------- Top bar */
 .topbar {
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--topbar-bg);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
@@ -161,7 +228,7 @@ a:hover { text-decoration: underline; }
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #20333f;
+  color: var(--brand-name-color);
   line-height: 1;
 }
 .brand-tagline {
@@ -290,7 +357,7 @@ a:hover { text-decoration: underline; }
 }
 .login-card {
   background: var(--surface);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: 1px solid var(--login-card-border);
   border-radius: var(--radius-lg);
   padding: 2.5rem 2.25rem 2rem;
   width: min(430px, 100%);
@@ -928,7 +995,7 @@ select.editor-note {
 .compare-gap {
   background: var(--surface-sunken);
   background-image: repeating-linear-gradient(45deg,
-    transparent, transparent 5px, rgba(28, 37, 52, 0.04) 5px, rgba(28, 37, 52, 0.04) 10px);
+    transparent, transparent 5px, var(--gap-stripe) 5px, var(--gap-stripe) 10px);
 }
 .compare-line mark { color: inherit; border-radius: 3px; padding: 0 1px; }
 .compare-del mark { background: var(--red-border); }
@@ -1064,7 +1131,7 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); }
 /* ------------------------------------------------------------- Skeletons */
 .skeleton {
   border-radius: 6px;
-  background: linear-gradient(90deg, var(--gray-bg) 25%, #f5f7fb 40%, var(--gray-bg) 55%);
+  background: linear-gradient(90deg, var(--gray-bg) 25%, var(--skeleton-mid) 40%, var(--gray-bg) 55%);
   background-size: 300% 100%;
   animation: shimmer 1.4s ease infinite;
 }

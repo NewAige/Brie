@@ -13,6 +13,7 @@ import PromptDetail from './pages/PromptDetail.jsx'
 import Suggestions from './pages/Suggestions.jsx'
 import Icon from './components/Icon.jsx'
 import Logo from './components/Logo.jsx'
+import ThemeToggle from './components/ThemeToggle.jsx'
 
 const ROLE_LABELS = {
   browser: 'Browser',
@@ -107,6 +108,7 @@ export default function App() {
                   <span className={`role-chip role-${user.role}`}>{ROLE_LABELS[user.role] || user.role}</span>
                 </span>
               </div>
+              <ThemeToggle />
               <button className="btn btn-quiet" onClick={logout}>Sign out</button>
             </div>
           </div>

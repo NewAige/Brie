@@ -7,6 +7,15 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <!-- No external assets of any kind: no CDN scripts, no web fonts.
          The browser must never reach a non-internal host (spec §8). -->
+    <script>
+      // Apply the saved theme before first paint so dark mode never flashes
+      // white on load. Kept inline (not an external asset) per spec §8.
+      try {
+        if (localStorage.getItem('brie-theme') === 'dark') {
+          document.documentElement.dataset.theme = 'dark'
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
