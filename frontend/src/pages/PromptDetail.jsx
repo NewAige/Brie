@@ -12,11 +12,40 @@ import { buildSuggestionInstructions, SUGGESTION_TYPE } from '../aiImport.js'
 export default function PromptDetail() {
   // Path after /prompt/ — may contain slashes.
   const path = decodeURIComponent(useLocation().pathname.replace(/^\/prompt\//, ''))
-  const { data: prompt, error, loading } = useAsyncData(() => api.prompt(path), [path])
+  const { data: prompt, error, loading, setData } = useAsyncData(() => api.prompt(path), [path])
   const user = useUser()
   const [editing, setEditing] = useState(false)
   const [sent, setSent] = useState(null)
+  const [actionError, setActionError] = useState(null)
+  const [raising, setRaising] = useState(false)
   const navigate = useNavigate()
+
+  // Cosmetic gate only — the server re-checks the role and the current level.
+  const canRaise = prompt && prompt.level === 'community' &&
+    (user.role === 'approver' || user.role === 'admin')
+
+  const raiseToBank = async () => {
+    const who = prompt.owner
+      ? `${prompt.owner} currently maintains this prompt and will no longer ` +
+        'be able to publish edits on their own.'
+      : ''
+    if (!window.confirm(
+      `Raise "${prompt.title}" to Bank?\n\n` +
+      "Bank prompts can only be changed with a Bank Approver's sign-off. " + who
+    )) return
+    setRaising(true)
+    setSent(null)
+    setActionError(null)
+    try {
+      const res = await api.raiseToBank(prompt.path)
+      setData((p) => ({ ...p, level: 'bank' }))
+      setSent(res.message)
+    } catch (err) {
+      setActionError(err.message)
+    } finally {
+      setRaising(false)
+    }
+  }
 
   if (loading) return <div className="spinner-row"><span className="spinner" /> Loading…</div>
   if (error) return <div className="alert alert-error">{error}</div>
@@ -102,12 +131,23 @@ export default function PromptDetail() {
             </button>
           </>
         )}
+        {canRaise && (
+          <button
+            className="btn"
+            onClick={raiseToBank}
+            disabled={raising}
+            title="Bank prompts can only be changed with a Bank Approver's sign-off."
+          >
+            {raising ? 'Raising…' : 'Raise to Bank'}
+          </button>
+        )}
         <Link className="btn btn-quiet" to={`/history/${prompt.path}`}>
           <Icon name="history" size={16} /> History
         </Link>
       </div>
 
       {sent && <div className="alert alert-success">{sent}</div>}
+      {actionError && <div className="alert alert-error">{actionError}</div>}
 
       {editing ? (
         <SuggestEditor

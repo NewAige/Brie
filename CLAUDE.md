@@ -59,7 +59,7 @@ Frontend (`frontend/src/`): React 18 + react-router, no state library. `api.js` 
 - **Whether someone may merge is decided by Gitea** (branch protection + permissions), except the owner-merge path in `ownership.py`, which is why that file is written so defensively.
 - **The UI never says "branch", "commit", "pull request" or "fork"** — git is an implementation detail; user-facing language is "suggest an edit", "publish", "suggestions".
 - **No external network calls at runtime**, server-side or browser-side: all frontend assets bundled locally, dependencies installed at build time only.
-- Every authoring path produces a `level: community` prompt. Bank tier is promotion-only and **not yet built** — see `docs/bank-upgrade.md` before touching levels.
+- Every authoring path produces a `level: community` prompt. Bank tier is promotion-only: an approver raises a live Community prompt via `POST /api/prompts/{path}/level` (a direct sha-guarded commit to main with the approver's own token — never a PR, never the bot). See `docs/bank-upgrade.md` before touching levels.
 
 ## v1 scope guardrails
 

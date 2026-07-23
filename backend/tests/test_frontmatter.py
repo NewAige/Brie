@@ -2,7 +2,10 @@
 flawless (spec §4): the body must never include YAML, and must survive odd
 files (windows line endings, --- inside the body, missing front-matter)."""
 
-from app.frontmatter import parse_prompt, replace_body, split_front_matter
+import pytest
+
+from app.frontmatter import (parse_prompt, replace_body, replace_level,
+                             split_front_matter)
 
 FULL = """---
 title: Payment Deferral Explainer
@@ -104,3 +107,42 @@ def test_replace_body_preserves_front_matter_verbatim():
 
 def test_replace_body_without_front_matter():
     assert replace_body("old text", "new text") == "new text\n"
+
+
+COMMUNITY = FULL.replace("status: approved", "status: approved\nlevel: community")
+
+
+def test_replace_level_changes_exactly_one_line():
+    """Promotion (docs/bank-upgrade.md) must be a one-line diff: the level
+    flips, every other byte — front-matter and body — stays identical."""
+    raised = replace_level(COMMUNITY, "bank")
+    assert raised == COMMUNITY.replace("level: community", "level: bank")
+    assert parse_prompt("x/y.md", raised)["level"] == "bank"
+
+
+def test_replace_level_keeps_body_dashes_intact():
+    raw = "---\ntitle: X\nlevel: community\n---\n\nPart one.\n\n---\n\nPart two.\n"
+    raised = replace_level(raw, "bank")
+    assert raised == raw.replace("level: community", "level: bank")
+
+
+def test_replace_level_fails_closed_without_a_level_line():
+    for raw in (FULL,                     # no `level:` at all
+                "no front-matter here",   # nothing to edit
+                "---\ntitle: X\nunclosed"):
+        with pytest.raises(ValueError):
+            replace_level(raw, "bank")
+
+
+def test_replace_level_fails_closed_on_duplicate_level_lines():
+    raw = "---\nlevel: community\nlevel: community\n---\n\nBody.\n"
+    with pytest.raises(ValueError):
+        replace_level(raw, "bank")
+
+
+def test_replace_level_ignores_indented_level_keys():
+    """An indented `level:` belongs to some nested value, not the prompt —
+    only a top-level line may be rewritten."""
+    raw = "---\nmeta:\n  level: community\n---\n\nBody.\n"
+    with pytest.raises(ValueError):
+        replace_level(raw, "bank")

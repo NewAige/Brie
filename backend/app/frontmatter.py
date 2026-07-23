@@ -5,6 +5,8 @@ The copy button copies ONLY the body below the closing `---` (spec §4,
 unit-tested in tests/test_frontmatter.py.
 """
 
+import re
+
 import yaml
 
 DELIMITER = "---"
@@ -89,6 +91,33 @@ def replace_body(raw: str, new_body: str) -> str:
     if fm_block is None:
         return new_body + "\n"
     return f"{fm_block}\n\n{new_body}\n"
+
+
+def replace_level(raw: str, new_level: str) -> str:
+    """Return the file with its front-matter `level:` line replaced and every
+    other line — front-matter and body alike — untouched (modulo the newline
+    normalization the rest of this module applies).
+
+    Raising a prompt to Bank must change exactly one line, so the commit diff
+    is an honest record of what was decided (docs/bank-upgrade.md). Raises
+    ValueError unless the front-matter carries exactly one top-level `level:`
+    line; callers must treat that as "cannot safely change the level" and
+    refuse to write — never re-render around the problem.
+    """
+    text = raw.replace("\r\n", "\n").replace("\r", "\n")
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != DELIMITER:
+        raise ValueError("no front-matter")
+    close = next((i for i in range(1, len(lines))
+                  if lines[i].strip() == DELIMITER), None)
+    if close is None:
+        raise ValueError("unclosed front-matter")
+    # Top-level keys only: an indented `level:` belongs to some nested value.
+    hits = [i for i in range(1, close) if re.match(r"level\s*:", lines[i])]
+    if len(hits) != 1:
+        raise ValueError(f"expected exactly one level line, found {len(hits)}")
+    lines[hits[0]] = f"level: {new_level}"
+    return "\n".join(lines)
 
 
 def render_prompt(meta: dict, body: str) -> str:

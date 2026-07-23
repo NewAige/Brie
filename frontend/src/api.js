@@ -51,6 +51,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ body, note }),
     }),
+  // Raise a live Community prompt to Bank. Approver-only — the server
+  // re-checks the role and re-reads the current level; the button that calls
+  // this is only a hint. Promotion is the sole direction: there is no demote.
+  raiseToBank: (path) =>
+    request(`/api/prompts/${encodePath(path)}/level`, {
+      method: 'POST',
+      body: JSON.stringify({ level: 'bank' }),
+    }),
   // Mark / unmark a prompt for the signed-in user. Returns { favorited }.
   setFavorite: (path, favorited) =>
     request(`/api/prompts/${encodePath(path)}/favorite`, {
