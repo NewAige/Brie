@@ -18,11 +18,14 @@ export default function PromptDetail() {
   const [sent, setSent] = useState(null)
   const [actionError, setActionError] = useState(null)
   const [raising, setRaising] = useState(false)
+  const [archiving, setArchiving] = useState(false)
   const navigate = useNavigate()
 
+  const isApprover = user.role === 'approver' || user.role === 'admin'
   // Cosmetic gate only — the server re-checks the role and the current level.
-  const canRaise = prompt && prompt.level === 'community' &&
-    (user.role === 'approver' || user.role === 'admin')
+  const canRaise = prompt && prompt.level === 'community' && isApprover
+  // Bank Approvers / admins can archive any live prompt; the server re-checks.
+  const canArchive = prompt && prompt.status !== 'archived' && isApprover
 
   const raiseToBank = async () => {
     const who = prompt.owner
@@ -44,6 +47,29 @@ export default function PromptDetail() {
       setActionError(err.message)
     } finally {
       setRaising(false)
+    }
+  }
+
+  const archive = async () => {
+    // The stop-gap against an accidental archive: an explicit confirm before
+    // anything is sent. The server also requires `confirm: true`, so this is a
+    // real gate, not a cosmetic one.
+    if (!window.confirm(
+      `Archive "${prompt.title}"?\n\n` +
+      'It will be hidden from the library and search, but anyone with a ' +
+      'direct link can still open it. This is an approver action.'
+    )) return
+    setArchiving(true)
+    setSent(null)
+    setActionError(null)
+    try {
+      const res = await api.archivePrompt(prompt.path)
+      setData((p) => ({ ...p, status: 'archived' }))
+      setSent(res.message)
+    } catch (err) {
+      setActionError(err.message)
+    } finally {
+      setArchiving(false)
     }
   }
 
@@ -118,6 +144,14 @@ export default function PromptDetail() {
         </div>
       )}
 
+      {prompt.status === 'archived' && (
+        <div className="alert alert-warn">
+          This prompt has been archived and hidden from the library. It is kept
+          for reference only — check the library for a current alternative
+          before using it.
+        </div>
+      )}
+
       <div className="body-actions">
         <CopyButton text={prompt.body} path={prompt.path} large />
         <FavoriteButton path={prompt.path} favorited={prompt.favorited} large />
@@ -139,6 +173,16 @@ export default function PromptDetail() {
             title="Bank prompts can only be changed with a Bank Approver's sign-off."
           >
             {raising ? 'Raising…' : 'Raise to Bank'}
+          </button>
+        )}
+        {canArchive && (
+          <button
+            className="btn btn-danger"
+            onClick={archive}
+            disabled={archiving}
+            title="Hide this prompt from the library. Bank Approvers and admins only."
+          >
+            <Icon name="archive" size={16} /> {archiving ? 'Archiving…' : 'Archive'}
           </button>
         )}
         <Link className="btn btn-quiet" to={`/history/${prompt.path}`}>

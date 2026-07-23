@@ -30,6 +30,12 @@ const PATHS = {
     </>
   ),
   edit: <path d="M4 20h4.5L19.6 8.9a2.1 2.1 0 0 0-3-3L5.5 17z" />,
+  archive: (
+    <>
+      <rect x="3" y="4" width="18" height="4" rx="1" />
+      <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" />
+    </>
+  ),
   send: <path d="M21 3 3 10.5l7 3.5m11-11L13.5 21 10 14m11-11L10 14" />,
   users: (
     <>

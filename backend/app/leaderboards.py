@@ -12,13 +12,15 @@ suggestions. The per-prompt boards (copies, favorites, remixes) are anonymous
 totals; no usernames are attached to them anywhere.
 """
 
+from .frontmatter import HIDDEN_STATUSES
+
 
 def top_authors(prompts: list[dict], names: dict[str, str] | None = None,
                 limit: int = 10) -> list[dict]:
-    """Users ranked by how many live (non-deprecated) prompts they authored."""
+    """Users ranked by how many live (non-retired) prompts they authored."""
     counts: dict[str, int] = {}
     for p in prompts:
-        if p.get("status") == "deprecated":
+        if p.get("status") in HIDDEN_STATUSES:
             continue
         author = str(p.get("author") or "").strip()
         if author:
@@ -50,7 +52,7 @@ def top_remixed(prompts: list[dict], limit: int = 10) -> list[dict]:
     (`copied_from` front-matter — "remixes" in the UI)."""
     counts: dict[str, int] = {}
     for p in prompts:
-        if p.get("status") == "deprecated":
+        if p.get("status") in HIDDEN_STATUSES:
             continue
         source = str(p.get("copied_from") or "").strip()
         if source and source != p.get("path"):

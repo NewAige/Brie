@@ -11,8 +11,9 @@ from .. import db, forks, gitea, prompt_index
 from ..categories import DEPARTMENTS
 from ..config import settings
 from ..deps import UserSession, current_session, require_approver, require_contributor
-from ..frontmatter import (parse_prompt, prompt_level, render_prompt,
-                           replace_body, replace_level, split_front_matter)
+from ..frontmatter import (HIDDEN_STATUSES, parse_prompt, prompt_level,
+                           render_prompt, replace_body, replace_level,
+                           replace_status, split_front_matter)
 from ..paths import is_prompt_file, slugify
 from . import pulls
 
@@ -37,7 +38,7 @@ async def categories(session: UserSession = Depends(current_session)):
     prompts = await prompt_index.get_index(session.token)
     counts: dict[str, int] = {name: 0 for name in DEPARTMENTS}
     for p in prompts:
-        if p["status"] == "deprecated":
+        if p["status"] in HIDDEN_STATUSES:
             continue
         counts[p["category"]] = counts.get(p["category"], 0) + 1
     names = DEPARTMENTS + sorted(name for name in counts if name not in DEPARTMENTS)
@@ -57,7 +58,7 @@ async def list_prompts(category: str = "", tag: str = "", q: str = "",
     marked = db.favorite_paths(session.username)
     results = []
     for p in prompts:
-        if p["status"] == "deprecated" and not include_deprecated:
+        if p["status"] in HIDDEN_STATUSES and not include_deprecated:
             continue  # hidden from default browse, still reachable by direct link
         if favorites and p["path"] not in marked:
             continue
@@ -230,6 +231,75 @@ async def raise_level(path: str, change: LevelChange,
     return {"message": f"{title} is now Bank approved. Every future change "
                        "requires a Bank Approver's sign-off.",
             "path": path, "level": "bank"}
+
+
+class ArchiveChange(BaseModel):
+    # A confirmation flag is the stop-gap against an accidental archive: the
+    # UI's "are you sure?" dialog sets it, and the server refuses to write
+    # without it. It carries no authority of its own — the approver gate and
+    # the sha-guard below are the real controls — it only makes the intent
+    # explicit so a stray click can never retire a prompt.
+    confirm: bool = Field(..., description="Must be true to archive.")
+
+
+@router.post("/prompts/{path:path}/archive")
+async def archive_prompt(path: str, change: ArchiveChange,
+                         session: UserSession = Depends(require_approver)):
+    """Archive a live prompt: retire it from browse/search while keeping the
+    file (and its history) reachable by direct link. Bank Approver / admin
+    only — same gate and same defensive shape as `raise_level` above.
+
+    A single direct commit to `main` with the archiving approver's OWN token —
+    never a PR, never the bot — so the owner-merge machinery stays out of the
+    path. Only the `status:` line changes; the body and every other
+    front-matter line are byte-identical, so the commit diff records exactly
+    what was decided. The current status is read from `main` here, never
+    trusted from the caller, and the blob sha from that read guards the write.
+    """
+    if not change.confirm:
+        # Fail closed: the stop-gap must be explicit. A missing confirmation is
+        # treated as "not this request", never as consent.
+        raise HTTPException(status_code=400,
+                            detail="Archiving must be confirmed.")
+    # Stricter than _require_valid_path: `_templates/` and README files are
+    # not library prompts, so they have no status to change.
+    if not is_prompt_file(path):
+        raise HTTPException(status_code=404, detail="Unknown prompt")
+    current = await _fetch_file(session.token, path)  # 404 if not on main
+    _fm, meta, _body = split_front_matter(current["text"])
+    if str(meta.get("status") or "").strip() == "archived":
+        raise HTTPException(status_code=409,
+                            detail="This prompt is already archived.")
+    try:
+        content = replace_status(current["text"], "archived")
+    except ValueError:
+        # The status line cannot be rewritten safely (missing, or duplicated).
+        # Fail closed: no write we cannot stand behind as a one-line change.
+        raise HTTPException(
+            status_code=409,
+            detail="This prompt's details could not be safely updated. "
+                   "Review the prompt and try again.")
+
+    title = str(meta.get("title") or path)
+    try:
+        await gitea.api(
+            session.token, "PUT", f"{settings.repo_api}/contents/{path}",
+            json={"branch": "main", "sha": current["sha"],
+                  "content": base64.b64encode(content.encode()).decode(),
+                  "message": f"Archive: {title}\n\n"
+                             f"Archived by {session.username}. Hidden from the "
+                             "library; still reachable by direct link."})
+    except HTTPException as exc:
+        if exc.status_code in (409, 422):
+            # Blob-sha mismatch: main moved between our read and this write.
+            # No internal retry — re-reading means re-deciding.
+            raise HTTPException(
+                status_code=409,
+                detail="This prompt changed while you were archiving it. "
+                       "Review the latest version and try again.")
+        raise
+    return {"message": f"{title} has been archived and hidden from the library.",
+            "path": path, "status": "archived"}
 
 
 class NewPrompt(BaseModel):

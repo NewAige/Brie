@@ -11,6 +11,12 @@ import yaml
 
 DELIMITER = "---"
 
+# Statuses that retire a prompt from the library: hidden from default browse,
+# search, and the author leaderboards, but still reachable by direct link.
+# `deprecated` is content-driven ("superseded by X"); `archived` is the
+# explicit retire action a Bank Approver takes.
+HIDDEN_STATUSES = ("deprecated", "archived")
+
 
 def split_front_matter(raw: str) -> tuple[str | None, dict, str]:
     """Split a prompt file into (front_matter_block, metadata, body).
@@ -104,6 +110,27 @@ def replace_level(raw: str, new_level: str) -> str:
     line; callers must treat that as "cannot safely change the level" and
     refuse to write — never re-render around the problem.
     """
+    return _replace_front_matter_line(raw, "level", new_level)
+
+
+def replace_status(raw: str, new_status: str) -> str:
+    """Return the file with its front-matter `status:` line replaced and every
+    other line untouched — the archive path's equivalent of `replace_level`.
+
+    Archiving a prompt must change exactly one line so the commit diff is an
+    honest record of what was decided. Raises ValueError unless the
+    front-matter carries exactly one top-level `status:` line; callers must
+    treat that as "cannot safely change the status" and refuse to write.
+    """
+    return _replace_front_matter_line(raw, "status", new_status)
+
+
+def _replace_front_matter_line(raw: str, key: str, new_value: str) -> str:
+    """Rewrite exactly the one top-level `<key>:` line in the front-matter,
+    leaving every other line — front-matter and body — byte-identical (modulo
+    newline normalization). Raises ValueError unless there is exactly one such
+    line, so a caller can never silently rewrite a file it does not understand.
+    """
     text = raw.replace("\r\n", "\n").replace("\r", "\n")
     lines = text.split("\n")
     if not lines or lines[0].strip() != DELIMITER:
@@ -112,11 +139,12 @@ def replace_level(raw: str, new_level: str) -> str:
                   if lines[i].strip() == DELIMITER), None)
     if close is None:
         raise ValueError("unclosed front-matter")
-    # Top-level keys only: an indented `level:` belongs to some nested value.
-    hits = [i for i in range(1, close) if re.match(r"level\s*:", lines[i])]
+    # Top-level keys only: an indented `key:` belongs to some nested value.
+    pattern = re.compile(rf"{re.escape(key)}\s*:")
+    hits = [i for i in range(1, close) if pattern.match(lines[i])]
     if len(hits) != 1:
-        raise ValueError(f"expected exactly one level line, found {len(hits)}")
-    lines[hits[0]] = f"level: {new_level}"
+        raise ValueError(f"expected exactly one {key} line, found {len(hits)}")
+    lines[hits[0]] = f"{key}: {new_value}"
     return "\n".join(lines)
 
 
