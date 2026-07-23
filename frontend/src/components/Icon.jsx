@@ -88,6 +88,13 @@ const PATHS = {
       <path d="M12 13v3M8.8 20.2h6.4M10.2 20.2l.6-4.2h2.4l.6 4.2" />
     </>
   ),
+  sun: (
+    <>
+      <circle cx="12" cy="12" r="4.2" />
+      <path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M18.7 5.3 17 7M7 17l-1.7 1.7" />
+    </>
+  ),
+  moon: <path d="M20.5 13.4A8.5 8.5 0 1 1 10.6 3.5a6.8 6.8 0 0 0 9.9 9.9z" />,
   // "Remix": one path splitting into another — deliberately not git imagery.
   shuffle: (
     <>
