@@ -97,6 +97,11 @@ export const api = {
   // The suggestion split into individually acceptable changes, pinned to
   // exact revisions so a later pullApply can detect that anything moved.
   pullReview: (id) => request(`/api/pulls/${id}/review`),
+  // Whole-text comparison of an open suggestion: each touched prompt's
+  // current and suggested body, front-matter already stripped server-side —
+  // copying a side copies exactly what the copy button would give after
+  // publishing.
+  pullCompare: (id) => request(`/api/pulls/${id}/compare`),
   // Publishes as approver or as prompt owner — the backend decides which,
   // and re-checks ownership itself. `pr.owner_mergeable` only picks the label.
   merge: (id) => request(`/api/pulls/${id}/merge`, { method: 'POST' }),
