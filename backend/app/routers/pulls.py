@@ -20,7 +20,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import db, gitea, hunks, ownership, roles
+from .. import db, frontmatter, gitea, hunks, ownership, roles
 from ..config import settings
 from ..deps import UserSession, current_session
 
@@ -207,6 +207,58 @@ async def pull_review(pr_id: int, session: UserSession = Depends(current_session
                       for h in file_hunks],
         })
     return {"head_sha": head_sha, "base_sha": base_sha, "files": out}
+
+
+# --- side-by-side comparison -------------------------------------------------
+#
+# pull_review shows a suggestion edit by edit; reviewers also want to read the
+# two versions whole — the prompt as it is today next to the prompt as
+# suggested — and copy either one out to try against a model before deciding.
+# Bodies only, split by frontmatter.py exactly like the copy button (spec §4):
+# what a reviewer copies to test is byte-for-byte what a user would copy after
+# publishing.
+
+
+def compare_file(path: str, base: str | None, head: str | None) -> dict:
+    """Pure: one touched file shaped for the comparison view. `base` is the
+    file on main, `head` the suggested version; None means the file doesn't
+    exist on that side (a brand-new or removed prompt)."""
+    base_split = frontmatter.split_front_matter(base) if base is not None else None
+    head_split = frontmatter.split_front_matter(head) if head is not None else None
+    return {
+        "path": path,
+        "status": ("added" if base is None else
+                   "removed" if head is None else "changed"),
+        "current": None if base_split is None else {"body": base_split[2]},
+        "suggested": None if head_split is None else {"body": head_split[2]},
+        # Front-matter edits (title, tags, level…) are invisible in a
+        # body-only view; flag them so the UI can point the reviewer at the
+        # change-by-change view instead of silently hiding part of the edit.
+        "details_changed": (base_split is not None and head_split is not None
+                            and base_split[0] != head_split[0]),
+    }
+
+
+@router.get("/pulls/{pr_id}/compare")
+async def pull_compare(pr_id: int, session: UserSession = Depends(current_session)):
+    """Each touched prompt's current and suggested text, whole, for the
+    side-by-side view. Content comes from the same pinned revisions
+    pull_review uses, but this is display-only — nothing here feeds a
+    publish, so no shas are returned."""
+    pr = await gitea.api(session.token, "GET", f"{settings.repo_api}/pulls/{pr_id}")
+    if pr.get("state") != "open" or pr.get("merged"):
+        raise HTTPException(status_code=409, detail="This suggestion has already been decided.")
+    head_sha = (pr.get("head") or {}).get("sha") or ""
+    if not head_sha:
+        raise HTTPException(status_code=400, detail="Could not read the suggestion.")
+    base_sha = await _main_sha(session.token)
+
+    files = []
+    for path in await _open_pr_files(session.token, pr_id):
+        base = await _file_at(session.token, path, base_sha)
+        head = await _file_at(session.token, path, head_sha)
+        files.append(compare_file(path, base, head))
+    return {"files": files}
 
 
 class FileSelection(BaseModel):

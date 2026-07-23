@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useAsyncData, useUser } from '../hooks.js'
 import { api } from '../api.js'
 import DiffView from '../components/DiffView.jsx'
+import CompareView from '../components/CompareView.jsx'
 import Icon from '../components/Icon.jsx'
 
 export default function Suggestions() {
@@ -100,6 +101,10 @@ function SuggestionItem({ pr, canApprove, canPublishAsOwner, isPeerSuggestion, i
   // `view` is { review } for deciders (per-change checkboxes) or { diff }
   // as the read-only / fallback rendering.
   const [view, setView] = useState(null)
+  // 'changes' (the per-edit view above) or 'compare' (side-by-side reading
+  // view, loaded lazily the first time it's opened).
+  const [mode, setMode] = useState('changes')
+  const [compare, setCompare] = useState(null) // { files } | { error }
   const [selected, setSelected] = useState({}) // "path:hunkIndex" -> bool
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -130,6 +135,16 @@ function SuggestionItem({ pr, canApprove, canPublishAsOwner, isPeerSuggestion, i
       setView({ diff: res.diff })
     } catch (err) {
       setView({ diff: `Could not load the change: ${err.message}` })
+    }
+  }
+
+  const showCompare = async () => {
+    setMode('compare')
+    if (compare !== null) return
+    try {
+      setCompare(await api.pullCompare(pr.id))
+    } catch (err) {
+      setCompare({ error: err.message || 'Could not load the comparison.' })
     }
   }
 
@@ -202,14 +217,42 @@ function SuggestionItem({ pr, canApprove, canPublishAsOwner, isPeerSuggestion, i
         <div className="history-diff">
           {pr.note && <p className="history-note"><strong>Note:</strong> {pr.note}</p>}
           {view === null && <div className="spinner-row small"><span className="spinner" /> Loading change…</div>}
-          {view?.diff !== undefined && <DiffView diff={view.diff} />}
-          {review && (
+          {/* Decided suggestions get no toggle: the comparison reads against
+              the library's *current* text, which only means something while
+              the suggestion is still open. */}
+          {pr.state === 'open' && view !== null && (
+            <div className="tabs compare-toggle">
+              <button
+                className={`chip ${mode === 'changes' ? 'chip-active' : ''}`}
+                onClick={() => setMode('changes')}
+              >
+                Changes
+              </button>
+              <button
+                className={`chip ${mode === 'compare' ? 'chip-active' : ''}`}
+                onClick={showCompare}
+              >
+                Side by side
+              </button>
+            </div>
+          )}
+          {mode === 'changes' && view?.diff !== undefined && <DiffView diff={view.diff} />}
+          {mode === 'changes' && review && (
             <ReviewHunks
               review={review}
               selected={selected}
               locked={busy || !!done}
               onToggle={(key) => setSelected((s) => ({ ...s, [key]: !s[key] }))}
             />
+          )}
+          {mode === 'compare' && (
+            compare === null ? (
+              <div className="spinner-row small"><span className="spinner" /> Loading comparison…</div>
+            ) : compare.error ? (
+              <div className="alert alert-error">{compare.error}</div>
+            ) : (
+              <CompareView files={compare.files} />
+            )
           )}
           {error && <div className="alert alert-error">{error}</div>}
           {done && <div className="alert alert-success">{done}</div>}

@@ -891,6 +891,49 @@ select.editor-note {
 .hunk-skipped .hunk-head { color: var(--muted); }
 .hunk-file { font-weight: 600; font-size: 0.9rem; margin-top: 0.9rem; display: flex; align-items: center; gap: 0.4rem; }
 
+/* --------------------------------------- Review: side-by-side comparison */
+.compare-toggle { margin-bottom: 0.8rem; }
+.compare-note { margin: 0.2rem 0 0.6rem; }
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  margin-bottom: 0.7rem;
+}
+.compare > :nth-child(2n) { border-left: 1px solid var(--border); }
+.compare-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2.2rem;
+  padding: 0.3rem 0.75rem;
+  background: var(--gray-bg);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.compare-copy { padding: 0.2rem 0.6rem; font-size: 0.78rem; }
+.compare-line { padding: 0.08rem 0.75rem; white-space: pre-wrap; word-break: break-word; }
+.compare-del { background: var(--red-bg); }
+.compare-add { background: var(--green-bg); }
+/* A line with no counterpart on this side. */
+.compare-gap {
+  background: var(--surface-sunken);
+  background-image: repeating-linear-gradient(45deg,
+    transparent, transparent 5px, rgba(28, 37, 52, 0.04) 5px, rgba(28, 37, 52, 0.04) 10px);
+}
+.compare-line mark { color: inherit; border-radius: 3px; padding: 0 1px; }
+.compare-del mark { background: var(--red-border); }
+.compare-add mark { background: var(--green-border); }
+
 .decline-box { display: flex; flex-direction: column; gap: 0.55rem; margin-top: 0.7rem; }
 .decline-box textarea {
   font: inherit;
