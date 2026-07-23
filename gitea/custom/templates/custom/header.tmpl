@@ -10,8 +10,9 @@
   HOW: link the Brie stylesheet (always — it is scoped to the sign-in page so
   it is inert elsewhere), then a tiny inline script that runs ONLY on the
   sign-in route. It tags <body class="brie-auth">, drops the Brie logo +
-  wordmark above the form, and a reassurance line below it. Plain DOM only —
-  no network calls, consistent with the app's no-external-calls rule.
+  wordmark above the form, and hides Gitea's "Remember This Device" checkbox
+  and "Forgot Password?" link. Plain DOM only — no network calls, consistent
+  with the app's no-external-calls rule.
 
   The logo SVG is copied from frontend/src/components/Logo.jsx (the Brie clock
   mark). Keep the two in sync if the mark changes.
@@ -51,20 +52,22 @@
         + '<div class="brie-brand-tagline">Prompt Library</div>'
         + '</div>';
       column.insertBefore(brand, column.firstChild);
-
-      var sub = document.createElement('p');
-      sub.className = 'brie-subhead';
-      sub.textContent = 'Sign in with your bank network account to continue.';
-      brand.insertAdjacentElement('afterend', sub);
     }
 
-    // Reassurance line below the form.
-    if (column && !column.querySelector('.brie-footnote')) {
-      var note = document.createElement('p');
-      note.className = 'brie-footnote';
-      note.textContent = 'You are signing in through the bank’s internal directory. '
-        + 'The Prompt Library never sees your password.';
-      form.insertAdjacentElement('afterend', note);
+    // Hide the "Remember This Device" checkbox — best-effort, keyed off the
+    // stable `name="remember"` input rather than Gitea's version-specific
+    // markup around it.
+    var rememberInput = form.querySelector('input[name="remember"]');
+    if (rememberInput) {
+      var rememberField = rememberInput.closest('.field') || rememberInput;
+      rememberField.style.display = 'none';
+    }
+
+    // Hide the "Forgot Password?" link.
+    var forgotLink = column && column.querySelector('a[href*="forgot_password"]');
+    if (forgotLink) {
+      var forgotField = forgotLink.closest('.field') || forgotLink;
+      forgotField.style.display = 'none';
     }
 
     // Give the page a Brie title instead of "Sign In - Gitea".
