@@ -59,6 +59,15 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ level: 'bank' }),
     }),
+  // Archive a prompt — retire it from browse while keeping it reachable by
+  // direct link. Bank Approver / admin only; the server re-checks the role.
+  // `confirm: true` is the deliberate stop-gap: the server refuses without it,
+  // so the "are you sure?" dialog is a real gate, not just a UI nicety.
+  archivePrompt: (path) =>
+    request(`/api/prompts/${encodePath(path)}/archive`, {
+      method: 'POST',
+      body: JSON.stringify({ confirm: true }),
+    }),
   // Mark / unmark a prompt for the signed-in user. Returns { favorited }.
   setFavorite: (path, favorited) =>
     request(`/api/prompts/${encodePath(path)}/favorite`, {

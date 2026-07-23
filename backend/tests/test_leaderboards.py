@@ -31,6 +31,13 @@ def test_top_authors_skips_deprecated_and_authorless():
     assert leaderboards.top_authors(prompts) == []
 
 
+def test_top_authors_skips_archived():
+    """Archived prompts are retired like deprecated ones — they don't count
+    toward an author's live-prompt tally."""
+    prompts = [prompt("a/one.md", author="uma.user", status="archived")]
+    assert leaderboards.top_authors(prompts) == []
+
+
 def test_top_authors_ties_break_alphabetically_and_limit_applies():
     prompts = [prompt(f"a/{name}-{i}.md", author=name)
                for name in ("zoe.z", "amy.a", "mia.m") for i in range(2)]

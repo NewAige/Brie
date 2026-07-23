@@ -5,7 +5,7 @@ files (windows line endings, --- inside the body, missing front-matter)."""
 import pytest
 
 from app.frontmatter import (parse_prompt, replace_body, replace_level,
-                             split_front_matter)
+                             replace_status, split_front_matter)
 
 FULL = """---
 title: Payment Deferral Explainer
@@ -146,3 +146,38 @@ def test_replace_level_ignores_indented_level_keys():
     raw = "---\nmeta:\n  level: community\n---\n\nBody.\n"
     with pytest.raises(ValueError):
         replace_level(raw, "bank")
+
+
+def test_replace_status_changes_exactly_one_line():
+    """Archiving must be a one-line diff too: the status flips, every other
+    byte — front-matter and body — stays identical."""
+    archived = replace_status(FULL, "archived")
+    assert archived == FULL.replace("status: approved", "status: archived")
+    assert parse_prompt("x/y.md", archived)["status"] == "archived"
+
+
+def test_replace_status_keeps_level_and_body_dashes_intact():
+    raw = "---\ntitle: X\nstatus: approved\nlevel: community\n---\n\nA.\n\n---\n\nB.\n"
+    archived = replace_status(raw, "archived")
+    assert archived == raw.replace("status: approved", "status: archived")
+    assert "level: community" in archived  # untouched
+
+
+def test_replace_status_fails_closed_without_a_status_line():
+    for raw in ("---\ntitle: X\n---\n\nBody.\n",  # no `status:` at all
+                "no front-matter here",           # nothing to edit
+                "---\ntitle: X\nunclosed"):
+        with pytest.raises(ValueError):
+            replace_status(raw, "archived")
+
+
+def test_replace_status_fails_closed_on_duplicate_status_lines():
+    raw = "---\nstatus: approved\nstatus: draft\n---\n\nBody.\n"
+    with pytest.raises(ValueError):
+        replace_status(raw, "archived")
+
+
+def test_replace_status_ignores_indented_status_keys():
+    raw = "---\nmeta:\n  status: approved\n---\n\nBody.\n"
+    with pytest.raises(ValueError):
+        replace_status(raw, "archived")
