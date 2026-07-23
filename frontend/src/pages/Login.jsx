@@ -12,9 +12,6 @@ export default function Login() {
           <span className="brand-name">Brie</span>
           <span className="brand-tagline">Prompt Library</span>
         </div>
-        <ul className="login-points">
-          <li><Icon name="shield" size={16} /> Every change reviewed before publication</li>
-        </ul>
         {error && (
           <div className="alert alert-error">
             Sign-in didn’t complete ({error}). Please try again.

@@ -372,22 +372,6 @@ a:hover { text-decoration: underline; }
   from { opacity: 0; transform: translateY(10px) scale(0.99); }
   to { opacity: 1; transform: none; }
 }
-.login-points {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  margin: 0;
-  padding: 0.9rem 1rem;
-  background: var(--surface-sunken);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  text-align: left;
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-  list-style: none;
-}
-.login-points li { display: flex; align-items: center; gap: 0.55rem; }
-.login-points .icon { color: var(--accent); }
 
 /* -------------------------------------------------------- Page furniture */
 .page-head {

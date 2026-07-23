@@ -16,9 +16,9 @@
  *
  * Loaded via templates/custom/header.tmpl (Gitea's end-of-<head> hook), so it
  * wins over Gitea's own stylesheets. Scoped to .page-content.user.signin — the
- * stable sign-in wrapper — so no other Gitea page is affected. header.tmpl's
- * script hides the "Remember This Device" checkbox and "Forgot Password?"
- * link directly (inline style), so this file has no rules for either.
+ * stable sign-in wrapper — so no other Gitea page is affected. This file hides
+ * the "Remember This Device" checkbox and "Forgot Password?" link (header.tmpl
+ * also hides them in JS as a fallback for browsers without :has()).
  */
 
 :root {
@@ -191,6 +191,15 @@ body.brie-auth .page-content.user.signin .field input:not([type="checkbox"]):foc
   outline: none;
   border-color: var(--brie-accent);
   box-shadow: 0 0 0 3px var(--brie-accent-soft);
+}
+
+/* Hide Gitea's "Remember This Device" checkbox and "Forgot Password?" link —
+ * not part of the Brie sign-in. This is the primary removal (header.tmpl also
+ * hides them in JS as a fallback for browsers without :has()). */
+body.brie-auth .page-content.user.signin .field:has(input[name="remember"]),
+body.brie-auth .page-content.user.signin .field:has(a[href*="forgot_password"]),
+body.brie-auth .page-content.user.signin a[href*="forgot_password"] {
+  display: none !important;
 }
 
 /* Primary submit — mirror .btn-primary.btn-large.btn-block. */
