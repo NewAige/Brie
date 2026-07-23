@@ -24,9 +24,9 @@ export default function Logo({ size = 32, className }) {
       <line x1="50" y1="50" x2="42" y2="35" stroke={LIGHT} strokeWidth="6" strokeLinecap="round" />
       {/* Minute hand (long, heavy) — on the 1 (5 minutes) */}
       <line x1="50" y1="50" x2="63.5" y2="26.5" stroke={LIGHT} strokeWidth="6" strokeLinecap="round" />
-      {/* Second hand (thin) — toward 7, tipped with a node */}
-      <line x1="50" y1="50" x2="36.5" y2="73.5" stroke={LIGHT} strokeWidth="2.4" strokeLinecap="round" />
-      <circle cx="36.5" cy="73.5" r="3.2" fill={LIGHT} />
+      {/* Second hand (thin) — just past 7 (37 seconds), tipped with a node */}
+      <line x1="50" y1="50" x2="31.9" y2="70.1" stroke={LIGHT} strokeWidth="2.4" strokeLinecap="round" />
+      <circle cx="31.9" cy="70.1" r="3.2" fill={LIGHT} />
 
       {/* Central axis pin */}
       <circle cx="50" cy="50" r="5.5" fill={LIGHT} />
