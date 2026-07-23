@@ -35,6 +35,8 @@ the PR and returns a decision, so the interesting cases are unit-testable
 without a Gitea running (tests/test_ownership.py).
 """
 
+import asyncio
+import time
 from dataclasses import dataclass
 
 from fastapi import HTTPException
@@ -214,32 +216,27 @@ async def owner_mergeable(token: str, username: str, pr_id: int, *,
     if not pre.allowed and not pre.reason.startswith("unowned on main"):
         return pre
 
+    # All file reads (each path on main AND on the head) run concurrently,
+    # bounded by _READ_CONCURRENCY. The semantics per read are unchanged from
+    # the old sequential loop: a 404 is a fact (absent file), any other error
+    # is a denial of the whole decision.
+    semaphore = asyncio.Semaphore(_READ_CONCURRENCY)
+    try:
+        views = await asyncio.gather(
+            *(_file_view(token, path, head_sha, semaphore) for path in paths))
+    except _DenyRead as exc:
+        return Decision(False, str(exc))
+
     facts: dict[str, FileFacts | None] = {}
     levels_on_head: dict[str, str] = {}
     owners_on_head: dict[str, str] = {}
-    for path in paths:
-        try:
-            raw = await gitea.api(token, "GET", f"{settings.repo_api}/raw/{path}",
-                                  params={"ref": "main"}, raw=True)
-        except HTTPException as exc:
-            if exc.status_code != 404:
-                return Decision(False, f"could not read {path} on main")
-            # New file. Not a denial by itself any more (phase E): fall through
-            # to the head reads, which is where a self-publish is authorized.
-            facts[path] = None
-        else:
-            facts[path] = FileFacts(owner_of(raw), level_of(raw))
-
-        # Head level: what the file WOULD say after merge. A file deleted on
-        # the head 404s here and stays absent from the map, which denies.
-        try:
-            head_raw = await gitea.api(token, "GET",
-                                       f"{settings.repo_api}/raw/{path}",
-                                       params={"ref": head_sha}, raw=True)
-        except HTTPException as exc:
-            if exc.status_code == 404:
-                continue
-            return Decision(False, f"could not read {path} on PR head")
+    for path, (main_facts, head_raw) in zip(paths, views):
+        # None: not on main. Not a denial by itself (phase E): the head reads
+        # are where a self-publish is authorized.
+        facts[path] = main_facts
+        if head_raw is None:
+            # Deleted on the head: stays absent from the level map, which denies.
+            continue
         levels_on_head[path] = level_of(head_raw)
         # Only consulted for files absent from main (phase E self-publish);
         # read unconditionally because it costs nothing extra here.
@@ -247,3 +244,78 @@ async def owner_mergeable(token: str, username: str, pr_id: int, *,
 
     return decide(username, paths, facts, levels_on_head, pr_author,
                   owners_on_head)
+
+
+# At most this many Gitea reads in flight per decision. A PR may touch up to
+# MAX_PR_FILES files (2 reads each); issuing all of them at once would trade
+# request latency for a thundering herd against Gitea.
+_READ_CONCURRENCY = 8
+
+
+class _DenyRead(Exception):
+    """Carries a fail-closed denial reason out of the concurrent reads in
+    `owner_mergeable`. Never escapes this module."""
+
+
+async def _file_view(token: str, path: str, head_sha: str,
+                     semaphore: asyncio.Semaphore
+                     ) -> tuple[FileFacts | None, str | None]:
+    """One path's facts on main (None if absent there) and its raw content on
+    the PR head (None if absent — deleted on the head). The two reads run
+    concurrently. Any Gitea error other than a 404 raises _DenyRead: a file we
+    cannot inspect fails the whole decision (fail closed)."""
+    async def read(ref: str, where: str) -> str | None:
+        async with semaphore:
+            try:
+                return await gitea.api(token, "GET",
+                                       f"{settings.repo_api}/raw/{path}",
+                                       params={"ref": ref}, raw=True)
+            except HTTPException as exc:
+                if exc.status_code == 404:
+                    return None
+                raise _DenyRead(f"could not read {path} on {where}")
+
+    main_raw, head_raw = await asyncio.gather(read("main", "main"),
+                                              read(head_sha, "PR head"))
+    main_facts = None if main_raw is None else \
+        FileFacts(owner_of(main_raw), level_of(main_raw))
+    return main_facts, head_raw
+
+
+# --- advisory cache ----------------------------------------------------------
+#
+# The Suggestions list and the nav badge ask the same question for every open
+# PR, per user, re-polled every minute — by far the app's hottest Gitea path.
+# The decision is a pure function of the revisions it reads (each file on main
+# and on the PR head), so it can be cached keyed by the exact revisions of
+# both sides: any publish to main or push to the suggestion changes a sha and
+# misses the cache. The main sha in the key must come from a read made with
+# the REQUESTING user's token (routers use prompt_index.head_sha), so a user
+# without repo access can never form a key, let alone hit someone's entry.
+#
+# ADVISORY ONLY: anything that executes — merge, decline, partial apply —
+# must call owner_mergeable directly so authorization is decided on live
+# reads immediately before acting (the boundary described in routers/pulls.py).
+
+ADVISORY_TTL = 60  # seconds; also bounds staleness when a PR closes sha-unchanged
+_advisory: dict[tuple[str, int, str, str], tuple[float, Decision]] = {}
+
+
+async def owner_mergeable_advisory(token: str, username: str, pr_id: int,
+                                   head_sha: str, main_sha: str) -> Decision:
+    """Cached `owner_mergeable` for display purposes only. Callers pass the
+    shas they already hold from the PR listing; a missing sha bypasses the
+    cache (an unkeyable decision is computed live, never mis-filed)."""
+    if not head_sha or not main_sha:
+        return await owner_mergeable(token, username, pr_id)
+    key = (username, pr_id, head_sha, main_sha)
+    now = time.time()
+    hit = _advisory.get(key)
+    if hit and hit[0] > now:
+        return hit[1]
+    decision = await owner_mergeable(token, username, pr_id)
+    if len(_advisory) >= 4096:
+        # Simple memory bound; entries age out by TTL, this catches key churn.
+        _advisory.clear()
+    _advisory[key] = (now + ADVISORY_TTL, decision)
+    return decision

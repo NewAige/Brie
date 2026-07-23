@@ -1,5 +1,6 @@
 """Browse, search, view, history, suggest-an-edit, and copy-event endpoints."""
 
+import asyncio
 import base64
 import difflib
 from typing import Literal
@@ -55,7 +56,7 @@ async def list_prompts(category: str = "", tag: str = "", q: str = "",
     filter the shared index rather than querying a separate collection."""
     prompts = await prompt_index.get_index(session.token)
     query = q.strip().lower()
-    marked = db.favorite_paths(session.username)
+    marked = await asyncio.to_thread(db.favorite_paths, session.username)
     results = []
     for p in prompts:
         if p["status"] in HIDDEN_STATUSES and not include_deprecated:
@@ -97,7 +98,9 @@ async def prompt_history(path: str, session: UserSession = Depends(current_sessi
         except HTTPException:
             return ""  # file did not exist at this commit
 
-    versions = [await content_at(c["sha"]) for c in commits]
+    # One fetch per commit, all in flight at once (the list is capped at 20
+    # above) — serially this was the slowest page in the app.
+    versions = list(await asyncio.gather(*(content_at(c["sha"]) for c in commits)))
 
     history = []
     for i, commit in enumerate(commits):
@@ -124,7 +127,7 @@ async def prompt_history(path: str, session: UserSession = Depends(current_sessi
 async def get_prompt(path: str, session: UserSession = Depends(current_session)):
     _require_valid_path(path)
     raw = await _fetch_file(session.token, path)
-    favorited = path in db.favorite_paths(session.username)
+    favorited = path in await asyncio.to_thread(db.favorite_paths, session.username)
     return _public(parse_prompt(path, raw["text"]), with_body=True,
                    favorited=favorited)
 
@@ -383,7 +386,7 @@ async def add_favorite(path: str, session: UserSession = Depends(current_session
     """Mark a prompt to come back to later. Available to every role including
     browsers — it changes nothing about the prompt, only the user's own view."""
     _require_valid_path(path)
-    db.add_favorite(session.username, path)
+    await asyncio.to_thread(db.add_favorite, session.username, path)
     return {"favorited": True}
 
 
@@ -391,7 +394,7 @@ async def add_favorite(path: str, session: UserSession = Depends(current_session
 async def remove_favorite(path: str, session: UserSession = Depends(current_session)):
     # No path validation: a prompt deleted from the library leaves a stale row,
     # and the user must still be able to clear it.
-    db.remove_favorite(session.username, path)
+    await asyncio.to_thread(db.remove_favorite, session.username, path)
     return {"favorited": False}
 
 
@@ -404,7 +407,7 @@ async def copy_event(event: CopyEvent):
     # Schema is deliberately just path + timestamp — no user id, no content,
     # no PII (spec §7).
     _require_valid_path(event.path)
-    db.log_copy_event(event.path)
+    await asyncio.to_thread(db.log_copy_event, event.path)
     return {"ok": True}
 
 

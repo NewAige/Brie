@@ -5,6 +5,7 @@ httpOnly cookie, and all Gitea calls happen server-side with the token looked
 up from the session store.
 """
 
+import asyncio
 import secrets
 import time
 from urllib.parse import urlencode
@@ -22,7 +23,7 @@ router = APIRouter()
 @router.get("/auth/login")
 async def login():
     state = secrets.token_urlsafe(32)
-    db.create_state(state)
+    await asyncio.to_thread(db.create_state, state)
     params = urlencode({
         "client_id": settings.oauth_client_id,
         "redirect_uri": settings.redirect_uri,
@@ -40,7 +41,7 @@ async def callback(request: Request, code: str = "", state: str = "",
     if error:
         return RedirectResponse(f"/login?error={error}")
     # CSRF protection: the state must be one we issued, unexpired, unused.
-    if not state or not db.consume_state(state):
+    if not state or not await asyncio.to_thread(db.consume_state, state):
         return RedirectResponse("/login?error=state_mismatch")
     if not code:
         return RedirectResponse("/login?error=missing_code")
@@ -50,7 +51,8 @@ async def callback(request: Request, code: str = "", state: str = "",
     user = await gitea.api(access_token, "GET", "/user")
 
     session_id = secrets.token_urlsafe(32)
-    db.create_session(
+    await asyncio.to_thread(
+        db.create_session,
         session_id,
         username=user["login"],
         access_token=access_token,
@@ -74,7 +76,7 @@ async def callback(request: Request, code: str = "", state: str = "",
 async def logout(request: Request):
     session_id = request.cookies.get(SESSION_COOKIE)
     if session_id:
-        db.delete_session(session_id)
+        await asyncio.to_thread(db.delete_session, session_id)
         roles.forget(session_id)
     response = JSONResponse({"ok": True})
     response.delete_cookie(SESSION_COOKIE, path="/")

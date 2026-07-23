@@ -78,17 +78,21 @@ async def activity(session: UserSession = Depends(current_session)):
             names[user["login"]] = user["full_name"]
 
     # The db queries over-fetch (25 for a top-10) so a few deleted prompts
-    # dropped by the join don't shorten the board.
+    # dropped by the join don't shorten the board. Off-thread (synchronous
+    # sqlite must not block the event loop) and concurrent with each other.
+    copied, favorited, partials = await asyncio.gather(
+        asyncio.to_thread(db.most_copied, limit=25),
+        asyncio.to_thread(db.most_favorited, limit=25),
+        asyncio.to_thread(db.partial_accept_counts),
+    )
     return {
         "recent_approvals": recent_approvals,
         "leaderboards": {
-            "most_copied": leaderboards.join_prompts(
-                db.most_copied(limit=25), prompts),
-            "most_favorited": leaderboards.join_prompts(
-                db.most_favorited(limit=25), prompts),
+            "most_copied": leaderboards.join_prompts(copied, prompts),
+            "most_favorited": leaderboards.join_prompts(favorited, prompts),
             "most_remixed": leaderboards.top_remixed(prompts),
             "top_authors": leaderboards.top_authors(prompts, names),
             "top_contributors": leaderboards.top_contributors(
-                merged, db.partial_accept_counts(), names),
+                merged, partials, names),
         },
     }

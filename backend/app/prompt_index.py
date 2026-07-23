@@ -42,7 +42,10 @@ async def get_index(token: str) -> list[dict]:
             if entry.get("type") == "blob" and is_prompt_file(entry["path"])
         ]
 
-        semaphore = asyncio.Semaphore(8)
+        # Bounds files in flight during a rebuild (each file is two concurrent
+        # Gitea reads). High enough that a few-hundred-prompt library rebuilds
+        # in a couple of seconds; low enough not to slam Gitea.
+        semaphore = asyncio.Semaphore(16)
 
         async def last_updated(path: str) -> str:
             """ISO timestamp of the newest commit touching this file. Display
@@ -61,14 +64,19 @@ async def get_index(token: str) -> list[dict]:
         async def fetch(path: str) -> dict | None:
             async with semaphore:
                 try:
-                    raw = await gitea.api(
-                        token, "GET", f"{settings.repo_api}/raw/{path}",
-                        params={"ref": sha}, raw=True,
+                    # Content and newest-commit timestamp are independent
+                    # reads — fetch them concurrently. last_updated never
+                    # raises, so only the raw fetch can abort the pair.
+                    raw, updated = await asyncio.gather(
+                        gitea.api(token, "GET",
+                                  f"{settings.repo_api}/raw/{path}",
+                                  params={"ref": sha}, raw=True),
+                        last_updated(path),
                     )
                 except HTTPException:
                     return None
                 prompt = parse_prompt(path, raw)
-                prompt["updated"] = await last_updated(path)
+                prompt["updated"] = updated
                 return prompt
 
         prompts = [p for p in await asyncio.gather(*(fetch(p) for p in paths)) if p]
