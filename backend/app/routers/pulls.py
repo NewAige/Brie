@@ -14,13 +14,14 @@ before merging — never trusting the check that rendered the button, since the
 PR can gain commits between page load and click.
 """
 
+import asyncio
 import base64
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import db, frontmatter, gitea, hunks, ownership, roles
+from .. import db, frontmatter, gitea, hunks, ownership, prompt_index, roles
 from ..config import settings
 from ..deps import UserSession, current_session
 
@@ -61,19 +62,23 @@ async def list_pulls(state: str = "open",
     # `needs_your_review` marks the phase-C peer case: someone else's
     # suggestion to a prompt this viewer owns, which only they can publish.
     if settings.owner_merge_enabled:
-        for summary in summaries:
-            if summary["state"] != "open":
-                continue
-            decision = await ownership.owner_mergeable(
-                session.token, session.username, summary["id"])
-            summary["owner_mergeable"] = decision.allowed
-            summary["needs_your_review"] = (
-                decision.allowed and summary["author"] != session.username)
+        open_summaries = [s for s in summaries if s["state"] == "open"]
+        if open_summaries:
+            main_sha, heads = await _advisory_keys(session.token, prs)
+            decisions = await asyncio.gather(*(
+                ownership.owner_mergeable_advisory(
+                    session.token, session.username, s["id"],
+                    heads.get(s["id"], ""), main_sha)
+                for s in open_summaries))
+            for summary, decision in zip(open_summaries, decisions):
+                summary["owner_mergeable"] = decision.allowed
+                summary["needs_your_review"] = (
+                    decision.allowed and summary["author"] != session.username)
 
     # Gitea only knows merged vs closed; the app's outcome log is what tells a
     # partially published suggestion apart from a plain declined one.
     if any(s["state"] == "closed" for s in summaries):
-        outcomes = db.suggestion_outcomes()
+        outcomes = await asyncio.to_thread(db.suggestion_outcomes)
         for summary in summaries:
             if summary["state"] == "closed":
                 summary["outcome"] = outcomes.get(summary["id"], "declined")
@@ -88,8 +93,9 @@ async def pulls_attention(session: UserSession = Depends(current_session)):
     the ones they may publish as owner (peer suggestions to their prompts,
     plus their own not-yet-published ones). Purely cosmetic, so every failure
     is a silent zero rather than an error — a broken badge must never take
-    the page down. Cost matches list_pulls (the ownership checks dominate);
-    the frontend polls this only once a minute.
+    the page down. The ownership checks run concurrently and hit the advisory
+    decision cache, so the once-a-minute poll from every open browser tab
+    costs Gitea almost nothing while nothing changes.
     """
     try:
         role = await roles.get_role(session.session_id, session.token)
@@ -99,15 +105,30 @@ async def pulls_attention(session: UserSession = Depends(current_session)):
             return {"count": len(prs)}
         if not settings.owner_merge_enabled:
             return {"count": 0}
-        count = 0
-        for pr in prs:
-            decision = await ownership.owner_mergeable(
-                session.token, session.username, pr["number"])
-            if decision.allowed:
-                count += 1
-        return {"count": count}
+        main_sha, heads = await _advisory_keys(session.token, prs)
+        decisions = await asyncio.gather(*(
+            ownership.owner_mergeable_advisory(
+                session.token, session.username, pr["number"],
+                heads.get(pr["number"], ""), main_sha)
+            for pr in prs))
+        return {"count": sum(1 for d in decisions if d.allowed)}
     except HTTPException:
         return {"count": 0}
+
+
+async def _advisory_keys(token: str, prs: list[dict]) -> tuple[str, dict[int, str]]:
+    """Cache-key material for owner_mergeable_advisory: main's head sha (read
+    with the requesting user's token, so repo access control applies to the
+    key itself) and each PR's head sha from the listing we already hold. Any
+    failure yields "", which makes the advisory wrapper skip its cache and
+    compute the decision live — never a wrong key, never an error here."""
+    try:
+        main_sha = await prompt_index.head_sha(token)
+    except HTTPException:
+        main_sha = ""
+    heads = {pr["number"]: str(((pr.get("head") or {}).get("sha")) or "")
+             for pr in prs if isinstance(pr.get("number"), int)}
+    return main_sha, heads
 
 
 @router.get("/pulls/{pr_id}/diff")
@@ -386,13 +407,15 @@ async def apply_partial(pr_id: int, accept: PartialAccept,
     await write("PATCH", f"{settings.repo_api}/pulls/{pr_id}",
                 json={"state": "closed"})
 
-    db.log_suggestion_outcome(pr_id, "partial", session.username,
-                              pr_author=pr_author, detail=f"{accepted} of {total}")
+    await asyncio.to_thread(
+        db.log_suggestion_outcome, pr_id, "partial", session.username,
+        pr_author=pr_author, detail=f"{accepted} of {total}")
     if as_owner:
         # Same audit trail as owner merges: a publish no approver reviewed.
-        db.log_owner_merge(session.username, pr_id,
-                           [path for path, _b, _c in changes],
-                           pr_author=pr_author, kind="partial")
+        await asyncio.to_thread(
+            db.log_owner_merge, session.username, pr_id,
+            [path for path, _b, _c in changes],
+            pr_author=pr_author, kind="partial")
     log.info("partial publish: %s accepted %s/%s changes of PR %s by %s (%s)",
              session.username, accepted, total, pr_id, pr_author or "unknown",
              "owner" if as_owner else "approver")
@@ -458,8 +481,9 @@ async def decline_pull(pr_id: int, decline: Decline,
         await gitea.bot_api("PATCH", f"{settings.repo_api}/pulls/{pr_id}",
                             json={"state": "closed"})
 
-    db.log_suggestion_outcome(pr_id, "declined", session.username,
-                              pr_author=pr_author, detail=note[:300])
+    await asyncio.to_thread(
+        db.log_suggestion_outcome, pr_id, "declined", session.username,
+        pr_author=pr_author, detail=note[:300])
     log.info("declined: %s closed PR %s by %s", session.username, pr_id,
              pr_author or "unknown")
     if pr_author == session.username:
@@ -603,8 +627,8 @@ async def _owner_merge(session: UserSession, pr_id: int,
     )
 
     # Audit AFTER the merge lands, so the log records publishes that happened.
-    db.log_owner_merge(session.username, pr_id, paths,
-                       pr_author=decision.pr_author, kind=kind)
+    await asyncio.to_thread(db.log_owner_merge, session.username, pr_id, paths,
+                            pr_author=decision.pr_author, kind=kind)
     log.info("owner-merge (%s): %s published PR %s by %s (%s)",
              kind, session.username, pr_id, decision.pr_author or "unknown",
              ", ".join(paths))

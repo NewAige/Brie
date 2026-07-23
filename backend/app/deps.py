@@ -1,5 +1,11 @@
-"""Request dependencies: resolve the session cookie to a live Gitea token."""
+"""Request dependencies: resolve the session cookie to a live Gitea token.
 
+SQLite calls here (and everywhere in the app) go through asyncio.to_thread:
+the driver is synchronous, and a blocking call on the event loop would stall
+every in-flight request — session lookup runs on literally all of them.
+"""
+
+import asyncio
 import time
 from dataclasses import dataclass
 
@@ -27,22 +33,23 @@ async def current_session(request: Request) -> UserSession:
     if not session_id:
         raise HTTPException(status_code=401, detail="Not signed in")
 
-    row = db.get_session(session_id)
+    row = await asyncio.to_thread(db.get_session, session_id)
     if row is None:
         raise HTTPException(status_code=401, detail="Session expired — please sign in again")
 
     token = row["access_token"]
     if row["expires_at"] - time.time() < REFRESH_MARGIN:
         if not row["refresh_token"]:
-            db.delete_session(session_id)
+            await asyncio.to_thread(db.delete_session, session_id)
             raise HTTPException(status_code=401, detail="Session expired — please sign in again")
         try:
             fresh = await gitea.refresh_tokens(row["refresh_token"])
         except HTTPException:
-            db.delete_session(session_id)
+            await asyncio.to_thread(db.delete_session, session_id)
             raise HTTPException(status_code=401, detail="Session expired — please sign in again")
         token = fresh["access_token"]
-        db.update_session_tokens(
+        await asyncio.to_thread(
+            db.update_session_tokens,
             session_id,
             access_token=token,
             refresh_token=fresh.get("refresh_token") or row["refresh_token"],
